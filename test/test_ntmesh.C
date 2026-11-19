@@ -4,6 +4,8 @@
 #include <type_traits>
 #include "tests.h"
 #include "ntmesh_file.h"
+#include "ntmesh_bw_tets.h"
+#include <cmath>
 
 using ntm::Type;
 using ntm::Attribute;
@@ -819,6 +821,66 @@ ntmeshTest()
     for (int i = 0; i < 2552; ++i)
       if (!used[i]) ++loose;
     expect_true(loose == 13, "bunny loose points");
+    expect_true(bunny.isClosed() == 0, "bunny is not closed");
+
+    ntmesh<float> mixed;
+    expect_true(readFile(mixed, "samplegeo/mixed_manifold_bunny.geo") == 1, "read mixed bunny");
+    expect_true(mixed.pointCount() == 1176, "mixed bunny points");
+    expect_true(mixed.triangleCount() == 189 && mixed.quadCount() == 1072 && mixed.ngonCount() == 5,
+                "mixed bunny faces");
+    expect_true(mixed.isClosed() == 1, "mixed bunny is closed");
+    expect_true(mixed.totalVolume() > 0.f, "mixed bunny volume is positive");
+    mixed.clear();
+
+    ntm::TetMesh<float> bunnyTets;
+    bunnyTets.build(bunny.points.data, bunny.pointCount());
+    expect_true(bunnyTets.pointCount == 2552 && bunnyTets.count > 0, "bunny tets");
+    if (bunnyTets.count > 0 && bunnyTets.pointCount == 2552) {
+      const int nsite = 2552 + 8;
+      double* xyz = new double[(size_t)nsite * 3];
+      for (int i = 0; i < nsite; ++i) {
+        nvec3<float> p = bunnyTets.position(bunny.points.data, i);
+        xyz[3 * i] = p[0];
+        xyz[3 * i + 1] = p[1];
+        xyz[3 * i + 2] = p[2];
+      }
+      char used[2560];
+      for (int i = 0; i < nsite; ++i) used[i] = 0;
+      int hull = 0;
+      bool orientOk = true, linkOk = true;
+      double vol = 0.0;
+      for (int ti = 0; ti < bunnyTets.count; ++ti) {
+        const ntm::Tet& tet = bunnyTets.tets[ti];
+        for (int k = 0; k < 4; ++k) {
+          if (tet.v[k] >= 0 && tet.v[k] < nsite) used[tet.v[k]] = 1;
+          int nb = tet.n[k];
+          if (nb < 0) {
+            ++hull;
+            continue;
+          }
+          int back = 0;
+          for (int s = 0; s < 4; ++s)
+            if (bunnyTets.tets[nb].n[s] == ti) ++back;
+          if (back != 1) linkOk = false;
+        }
+        if (ntm::detail::orient3d(xyz, tet.v[0], tet.v[1], tet.v[2], tet.v[3]) <= 0) orientOk = false;
+        nvec3<double> a(xyz[3 * tet.v[0]], xyz[3 * tet.v[0] + 1], xyz[3 * tet.v[0] + 2]);
+        nvec3<double> b(xyz[3 * tet.v[1]], xyz[3 * tet.v[1] + 1], xyz[3 * tet.v[1] + 2]);
+        nvec3<double> c(xyz[3 * tet.v[2]], xyz[3 * tet.v[2] + 1], xyz[3 * tet.v[2] + 2]);
+        nvec3<double> d(xyz[3 * tet.v[3]], xyz[3 * tet.v[3] + 1], xyz[3 * tet.v[3] + 2]);
+        vol += (b - a).cross(c - a).dot(d - a) / 6.0;
+      }
+      bool allUsed = true;
+      for (int i = 0; i < nsite; ++i)
+        if (!used[i]) allUsed = false;
+      double dx = (double)bunnyTets.corner[6][0] - (double)bunnyTets.corner[0][0];
+      double dy = (double)bunnyTets.corner[6][1] - (double)bunnyTets.corner[0][1];
+      double dz = (double)bunnyTets.corner[6][2] - (double)bunnyTets.corner[0][2];
+      expect_true(orientOk && linkOk && hull == 12 && allUsed, "bunny tet links");
+      expect_true(std::fabs(vol - dx * dy * dz) <= 1e-5 * dx * dy * dz, "bunny tet volume");
+      delete[] xyz;
+    }
+    bunnyTets.clear();
     bunny.clear();
   }
 
@@ -849,7 +911,7 @@ ntmeshTest()
     int q3 = quad.addPoint(nvec3<float>(0, 1, 0));
     int square[] = {q0, q1, q2, q3};
     quad.addFace(square, 4);
-    quad.triangulate();
+    expect_true(quad.triangulate(), "quad triangulates");
     expect_true(quad.triangleCount() == 2 && quad.quadCount() == 0 && quad.ngonCount() == 0, "quad becomes two triangles");
     expect_true(std::fabs(areaXY(quad) - 1.f) < 1e-5f, "square area");
     expect_true(hasEdge(quad, q0, q1) && hasEdge(quad, q1, q2) && hasEdge(quad, q2, q3) && hasEdge(quad, q3, q0),
@@ -871,7 +933,7 @@ ntmeshTest()
       dentArea += a[0] * b[1] - b[0] * a[1];
     }
     dentArea *= 0.5f;
-    dent.triangulate();
+    expect_true(dent.triangulate(), "concave ngon triangulates");
     expect_true(dent.triangleCount() == 3 && dent.ngonCount() == 0, "concave ngon becomes three triangles");
     expect_true(std::fabs(areaXY(dent) - dentArea) < 1e-4f, "concave area is preserved");
     expect_true(hasEdge(dent, d0, d1) && hasEdge(dent, d1, d2) && hasEdge(dent, d2, d3) && hasEdge(dent, d3, d4) &&
@@ -905,7 +967,7 @@ ntmeshTest()
     pid->intAt(2)[0] = 9;
     mixed.setString(*mixed.addFaceString("name"), 1, "quad");
     mixed.setString(*mixed.addFaceString("name"), 2, "wire");
-    mixed.triangulate();
+    expect_true(mixed.triangulate(), "mixed mesh triangulates");
     expect_true(mixed.triangleCount() == 3 && mixed.quadCount() == 0 && mixed.lineCount() == 1, "mixed lists");
     expect_true(mixed.lineVertex(0, 0) == b && mixed.lineVertex(0, 1) == e, "line stays");
     expect_true(vid->intAt(0)[0] == 1 && vid->intAt(1)[0] == 2 && vid->intAt(2)[0] == 3, "triangle corners stay");
@@ -933,10 +995,99 @@ ntmeshTest()
     int n2 = asNgon.addPoint(nvec3<float>(0, 1, 0));
     int packed[] = {n0, n1, n2};
     asNgon.addFace(packed, 3, false);
-    asNgon.triangulate();
+    expect_true(asNgon.triangulate(), "triangle stored as an ngon triangulates");
     expect_true(asNgon.triangleCount() == 1 && asNgon.ngonCount() == 0 && asNgon.triangleVertex(0, 2) == n2,
                 "stored triangle ngon becomes a triangle");
     asNgon.clear();
+
+    ntmesh<float> quadsStay;
+    int s0 = quadsStay.addPoint(nvec3<float>(0, 0, 0));
+    int s1 = quadsStay.addPoint(nvec3<float>(1, 0, 0));
+    int s2 = quadsStay.addPoint(nvec3<float>(1, 1, 0));
+    int s3 = quadsStay.addPoint(nvec3<float>(0, 1, 0));
+    int s4 = quadsStay.addPoint(nvec3<float>(3, 0, 0));
+    int s5 = quadsStay.addPoint(nvec3<float>(1, 0.25f, 0));
+    int s6 = quadsStay.addPoint(nvec3<float>(3, 2, 0));
+    int s7 = quadsStay.addPoint(nvec3<float>(0, 2, 0));
+    int stayQuad[] = {s0, s1, s2, s3};
+    int stayNgon[] = {s0, s4, s5, s6, s7};
+    quadsStay.addFace(stayQuad, 4);
+    quadsStay.addFace(stayNgon, 5);
+    float ngonArea = 0.f;
+    for (int k = 0; k < 5; ++k) {
+      nvec3<float> pa = quadsStay.points[stayNgon[k]];
+      nvec3<float> pb = quadsStay.points[stayNgon[(k + 1) % 5]];
+      ngonArea += pa[0] * pb[1] - pb[0] * pa[1];
+    }
+    ngonArea *= 0.5f;
+    expect_true(quadsStay.triangulateNgons(), "ngon triangulates beside a quad");
+    expect_true(quadsStay.quadCount() == 1 && quadsStay.ngonCount() == 0 && quadsStay.triangleCount() == 3,
+                "ngons split and the quad list stays");
+    expect_true(quadsStay.quadVertex(0, 0) == s0 && quadsStay.quadVertex(0, 1) == s1 &&
+                    quadsStay.quadVertex(0, 2) == s2 && quadsStay.quadVertex(0, 3) == s3,
+                "quad corners stay in order");
+    expect_true(std::fabs(areaXY(quadsStay) - ngonArea) < 1e-4f, "ngon area moves onto the triangles");
+    expect_true(hasEdge(quadsStay, s0, s4) && hasEdge(quadsStay, s4, s5) && hasEdge(quadsStay, s5, s6) &&
+                    hasEdge(quadsStay, s6, s7) && hasEdge(quadsStay, s7, s0),
+                "ngon boundary is on the new triangles");
+    quadsStay.clear();
+
+    SMesh ngonSplit;
+    int g0 = ngonSplit.addPoint(nvec3<float>(0, 0, 0));
+    int g1 = ngonSplit.addPoint(nvec3<float>(1, 0, 0));
+    int g2 = ngonSplit.addPoint(nvec3<float>(0, 1, 0));
+    int g3 = ngonSplit.addPoint(nvec3<float>(1, 1, 0));
+    int g4 = ngonSplit.addPoint(nvec3<float>(2, 0, 0));
+    int g5 = ngonSplit.addPoint(nvec3<float>(2, 1, 0));
+    int g6 = ngonSplit.addPoint(nvec3<float>(2, 2, 0));
+    int keepTri[] = {g0, g1, g2};
+    int keepQuad[] = {g0, g1, g3, g2};
+    int splitNgon[] = {g0, g4, g5, g6, g2};
+    int keepLine[] = {g1, g4};
+    ngonSplit.addFace(keepTri, 3);
+    ngonSplit.addFace(keepQuad, 4);
+    ngonSplit.addFace(splitNgon, 5);
+    ngonSplit.addLine(keepLine, 2);
+    Attribute* splitV = ngonSplit.addVertexAttrib("id", Type::Int, 1);
+    for (int i = 0; i < ngonSplit.vertexCount(); ++i) splitV->intAt(i)[0] = 100 + i;
+    Attribute* splitP = ngonSplit.addFaceAttrib("pid", Type::Int, 1);
+    for (int f = 0; f < ngonSplit.primCount(); ++f) splitP->intAt(f)[0] = 50 + f;
+    ngonSplit.setString(*ngonSplit.addFaceString("name"), 1, "quad");
+    ngonSplit.setString(*ngonSplit.addFaceString("name"), 2, "ngon");
+    ngonSplit.setString(*ngonSplit.addFaceString("name"), 3, "wire");
+    expect_true(ngonSplit.triangulateNgons(), "attributed ngon triangulates");
+    expect_true(ngonSplit.triangleCount() == 4 && ngonSplit.quadCount() == 1 && ngonSplit.ngonCount() == 0 &&
+                    ngonSplit.lineCount() == 1,
+                "ngon split keeps the quad and the line");
+    expect_true(ngonSplit.triangleVertex(0, 0) == g0 && ngonSplit.triangleVertex(0, 2) == g2, "first triangle stays");
+    expect_true(ngonSplit.quadVertex(0, 0) == g0 && ngonSplit.quadVertex(0, 1) == g1 && ngonSplit.quadVertex(0, 2) == g3 &&
+                    ngonSplit.quadVertex(0, 3) == g2,
+                "quad corners stay after the ngon split");
+    expect_true(ngonSplit.lineVertex(0, 0) == g1 && ngonSplit.lineVertex(0, 1) == g4, "line stays after the ngon split");
+    expect_true(splitV->intAt(0)[0] == 100 && splitV->intAt(1)[0] == 101 && splitV->intAt(2)[0] == 102,
+                "triangle corner values stay");
+    expect_true(splitV->intAt(12)[0] == 103 && splitV->intAt(13)[0] == 104 && splitV->intAt(14)[0] == 105 &&
+                    splitV->intAt(15)[0] == 106,
+                "quad corner values stay behind the new triangles");
+    expect_true(splitV->intAt(16)[0] == 112 && splitV->intAt(17)[0] == 113, "line corner values stay at the end");
+    int ngonValue[5] = {107, 108, 109, 110, 111};
+    int ngonPoint[5] = {g0, g4, g5, g6, g2};
+    for (int f = 1; f < 4; ++f) {
+      for (int k = 0; k < 3; ++k) {
+        int pt = ngonSplit.triangleVertex(f, k);
+        int expect = -1;
+        for (int s = 0; s < 5; ++s)
+          if (ngonPoint[s] == pt) expect = ngonValue[s];
+        expect_true(splitV->intAt(3 + (f - 1) * 3 + k)[0] == expect, "ngon corner value follows the point");
+      }
+    }
+    expect_true(splitP->intAt(0)[0] == 50 && splitP->intAt(1)[0] == 52 && splitP->intAt(2)[0] == 52 &&
+                    splitP->intAt(3)[0] == 52 && splitP->intAt(4)[0] == 51 && splitP->intAt(5)[0] == 53,
+                "prim values keep quads behind the split ngons");
+    expect_true(std::strcmp(ngonSplit.getString(*ngonSplit.findFaceString("name"), 1), "ngon") == 0, "split ngon string");
+    expect_true(std::strcmp(ngonSplit.getString(*ngonSplit.findFaceString("name"), 4), "quad") == 0, "quad string stays");
+    expect_true(std::strcmp(ngonSplit.getString(*ngonSplit.findFaceString("name"), 5), "wire") == 0, "line string stays after ngons");
+    ngonSplit.clear();
 
     SMesh turned;
     int t0 = turned.addPoint(nvec3<float>(0, 0, 0));
@@ -1045,12 +1196,12 @@ ntmeshTest()
     }
     expect_true(cube.isClosed() == 1, "cube is closed");
     expect_true(std::fabs(cube.totalSurfaceArea() - 6.f) < 1e-4f, "cube area");
-    expect_true(std::fabs(cube.totalVolume() - 1.f) < 1e-4f, "cube volume");
+    expect_true(std::fabs(cube.totalVolume() + 1.f) < 1e-4f, "cube volume");
     int lineC[] = {cid[0], cid[6]};
     cube.addLine(lineC, 2);
     expect_true(cube.isClosed() == 1 && std::fabs(cube.totalSurfaceArea() - 6.f) < 1e-4f, "a line does not open the cube");
     cube.reverse();
-    expect_true(cube.isClosed() == 1 && std::fabs(cube.totalVolume() + 1.f) < 1e-4f, "reversed cube has negative volume");
+    expect_true(cube.isClosed() == 1 && std::fabs(cube.totalVolume() - 1.f) < 1e-4f, "reversed cube has positive volume");
     cube.clear();
 
     ntmesh<float> pair;
@@ -1075,14 +1226,14 @@ ntmeshTest()
     int corners[] = {t0, t1, t2};
     tri.addFace(corners, 3);
     int two[] = {t0, t1};
-    expect_vec(tri.newell(corners, 3), nvec3<float>(0, 0, 1), 1e-5f, "triangle newell length is twice the area");
-    expect_vec(tri.faceNormal(0), nvec3<float>(0, 0, 1), 1e-5f, "triangle face normal");
+    expect_vec(tri.newell(corners, 3), nvec3<float>(0, 0, -1), 1e-5f, "triangle newell length is twice the area");
+    expect_vec(tri.faceNormal(0), nvec3<float>(0, 0, -1), 1e-5f, "triangle face normal");
     expect_vec(tri.newell(two, 2), nvec3<float>(0, 0, 0), 0.f, "short span has no newell");
     tri.addLine(two, 2);
     expect_vec(tri.faceNormal(1), nvec3<float>(0, 0, 0), 0.f, "a line has no face normal");
     expect_vec(tri.faceNormal(-1), nvec3<float>(0, 0, 0), 0.f, "out of range face normal");
     tri.reverse();
-    expect_vec(tri.faceNormal(0), nvec3<float>(0, 0, -1), 1e-5f, "reverse flips the face normal");
+    expect_vec(tri.faceNormal(0), nvec3<float>(0, 0, 1), 1e-5f, "reverse flips the face normal");
     tri.clear();
 
     AMesh weighted;
@@ -1097,14 +1248,14 @@ ntmeshTest()
     weighted.addFace(big, 3);
     weighted.addFace(small, 3);
     Attribute* pointN = ntm::computePointNormals(weighted);
-    nvec3<float> lean(-1.f, 0.f, 4.f);
+    nvec3<float> lean(1.f, 0.f, -4.f);
     lean.normalize();
     expect_true(pointN && pointN->kind == Type::Normal && pointN->tupleSize == 3, "point N column");
     expect_vec(nvec3<float>(pointN->floatAt(0)[0], pointN->floatAt(0)[1], pointN->floatAt(0)[2]), lean, 1e-5f,
                "large face weighs more");
-    expect_vec(nvec3<float>(pointN->floatAt(1)[0], pointN->floatAt(1)[1], pointN->floatAt(1)[2]), nvec3<float>(0, 0, 1), 1e-5f,
+    expect_vec(nvec3<float>(pointN->floatAt(1)[0], pointN->floatAt(1)[1], pointN->floatAt(1)[2]), nvec3<float>(0, 0, -1), 1e-5f,
                "point on the large face only");
-    expect_vec(nvec3<float>(pointN->floatAt(3)[0], pointN->floatAt(3)[1], pointN->floatAt(3)[2]), nvec3<float>(-1, 0, 0), 1e-5f,
+    expect_vec(nvec3<float>(pointN->floatAt(3)[0], pointN->floatAt(3)[1], pointN->floatAt(3)[2]), nvec3<float>(1, 0, 0), 1e-5f,
                "point on the small face only");
     expect_vec(nvec3<float>(pointN->floatAt(5)[0], pointN->floatAt(5)[1], pointN->floatAt(5)[2]), nvec3<float>(0, 0, 0), 0.f,
                "unused point stays zero");
@@ -1123,10 +1274,10 @@ ntmeshTest()
       int q[4] = {cid[faces[f][0]], cid[faces[f][1]], cid[faces[f][2]], cid[faces[f][3]]};
       cube.addFace(q, 4);
     }
-    nvec3<float> corner(1.f, 1.f, 1.f);
+    nvec3<float> corner(-1.f, -1.f, -1.f);
     corner.normalize();
     Attribute* flat = ntm::computeVertexNormals(cube, 0.f);
-    expect_vec(nvec3<float>(flat->floatAt(0)[0], flat->floatAt(0)[1], flat->floatAt(0)[2]), nvec3<float>(0, 0, -1), 1e-5f,
+    expect_vec(nvec3<float>(flat->floatAt(0)[0], flat->floatAt(0)[1], flat->floatAt(0)[2]), nvec3<float>(0, 0, 1), 1e-5f,
                "cusp zero keeps the face normal");
     Attribute* smooth = ntm::computeVertexNormals(cube, 3.14159265f);
     expect_vec(nvec3<float>(smooth->floatAt(22)[0], smooth->floatAt(22)[1], smooth->floatAt(22)[2]), corner, 1e-5f,
@@ -1138,13 +1289,171 @@ ntmeshTest()
     cube.addLine(edge, 2);
     Attribute* faceN = ntm::computeFaceNormals(cube);
     expect_true(faceN && faceN->count == 7, "face N covers the line too");
-    expect_vec(nvec3<float>(faceN->floatAt(0)[0], faceN->floatAt(0)[1], faceN->floatAt(0)[2]), nvec3<float>(0, 0, -1), 1e-5f,
+    expect_vec(nvec3<float>(faceN->floatAt(0)[0], faceN->floatAt(0)[1], faceN->floatAt(0)[2]), nvec3<float>(0, 0, 1), 1e-5f,
                "first cube face normal");
-    expect_vec(nvec3<float>(faceN->floatAt(5)[0], faceN->floatAt(5)[1], faceN->floatAt(5)[2]), nvec3<float>(1, 0, 0), 1e-5f,
+    expect_vec(nvec3<float>(faceN->floatAt(5)[0], faceN->floatAt(5)[1], faceN->floatAt(5)[2]), nvec3<float>(-1, 0, 0), 1e-5f,
                "last cube face normal");
     expect_vec(nvec3<float>(faceN->floatAt(6)[0], faceN->floatAt(6)[1], faceN->floatAt(6)[2]), nvec3<float>(0, 0, 0), 0.f,
                "line prim normal stays zero");
     cube.clear();
+  }
+
+  {
+    using ntm::detail::inSphere;
+    using ntm::detail::orient3d;
+    double unit[15] = {0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0.2, 0.2, 0.2};
+    expect_true(orient3d(unit, 0, 1, 2, 3) == 1, "right-handed tet is positive");
+    expect_true(orient3d(unit, 0, 1, 3, 2) == -1, "swapping two corners flips orient");
+    expect_true(inSphere(unit, 0, 1, 2, 3, 4) == 1, "a point inside the corner tet is inside its sphere");
+    unit[12] = 0.5;
+    unit[13] = 0.5;
+    unit[14] = 0.5;
+    expect_true(inSphere(unit, 0, 1, 2, 3, 4) == 1, "the circumcenter is inside the sphere");
+    unit[12] = 2;
+    unit[13] = 2;
+    unit[14] = 2;
+    expect_true(inSphere(unit, 0, 1, 2, 3, 4) == -1, "a far point is outside the sphere");
+    unit[12] = 1;
+    unit[13] = 1;
+    unit[14] = 0;
+    int onSphere = inSphere(unit, 0, 1, 2, 3, 4);
+    int onSwap = inSphere(unit, 1, 0, 2, 3, 4);
+    expect_true(onSphere != 0 && onSwap == -onSphere, "a cospherical tie breaks and flips when swapped");
+
+    double flat[12] = {0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0};
+    expect_true(orient3d(flat, 0, 1, 2, 3) == -orient3d(flat, 1, 0, 2, 3), "coplanar orient flips");
+    expect_true(orient3d(flat, 0, 1, 2, 3) != 0, "coplanar orient still picks a side");
+    double same[12] = {1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3};
+    expect_true(orient3d(same, 0, 1, 2, 3) == -orient3d(same, 0, 1, 3, 2), "duplicate points still orient");
+    expect_true(orient3d(same, 0, 1, 2, 3) == orient3d(same, 1, 0, 3, 2), "an even swap of duplicates keeps the sign");
+
+    auto checkMesh = [](const char* name, const nvec3<float>* pts, int n, ntm::TetMesh<float>& mesh) {
+      expect_true(mesh.pointCount == n && mesh.count > 0, name);
+      if (mesh.pointCount != n || mesh.count <= 0) return;
+      float minx = pts[0][0], maxx = minx, miny = pts[0][1], maxy = miny, minz = pts[0][2], maxz = minz;
+      for (int i = 1; i < n; ++i) {
+        if (pts[i][0] < minx) minx = pts[i][0];
+        if (pts[i][0] > maxx) maxx = pts[i][0];
+        if (pts[i][1] < miny) miny = pts[i][1];
+        if (pts[i][1] > maxy) maxy = pts[i][1];
+        if (pts[i][2] < minz) minz = pts[i][2];
+        if (pts[i][2] > maxz) maxz = pts[i][2];
+      }
+      expect_true(mesh.corner[0][0] < minx && mesh.corner[0][1] < miny && mesh.corner[0][2] < minz, name);
+      expect_true(mesh.corner[6][0] > maxx && mesh.corner[6][1] > maxy && mesh.corner[6][2] > maxz, name);
+
+      int nsite = n + 8;
+      double* xyz = new double[(size_t)nsite * 3];
+      for (int i = 0; i < nsite; ++i) {
+        nvec3<float> p = mesh.position(pts, i);
+        xyz[3 * i] = p[0];
+        xyz[3 * i + 1] = p[1];
+        xyz[3 * i + 2] = p[2];
+      }
+      char* used = new char[(size_t)nsite];
+      for (int i = 0; i < nsite; ++i) used[i] = 0;
+      int hull = 0;
+      double vol = 0.0;
+      bool orientOk = true, linkOk = true, indexOk = true, insideOk = true, sphereOk = true;
+      for (int ti = 0; ti < mesh.count; ++ti) {
+        const ntm::Tet& tet = mesh.tets[ti];
+        for (int k = 0; k < 4; ++k) {
+          if (tet.v[k] < 0 || tet.v[k] >= nsite) indexOk = false;
+          else used[tet.v[k]] = 1;
+          int nb = tet.n[k];
+          if (nb < 0) {
+            ++hull;
+            continue;
+          }
+          if (nb >= mesh.count) {
+            linkOk = false;
+            continue;
+          }
+          int back = 0;
+          for (int s = 0; s < 4; ++s)
+            if (mesh.tets[nb].n[s] == ti) ++back;
+          if (back != 1) linkOk = false;
+        }
+        if (orient3d(xyz, tet.v[0], tet.v[1], tet.v[2], tet.v[3]) <= 0) orientOk = false;
+        nvec3<double> a(xyz[3 * tet.v[0]], xyz[3 * tet.v[0] + 1], xyz[3 * tet.v[0] + 2]);
+        nvec3<double> b(xyz[3 * tet.v[1]], xyz[3 * tet.v[1] + 1], xyz[3 * tet.v[1] + 2]);
+        nvec3<double> c(xyz[3 * tet.v[2]], xyz[3 * tet.v[2] + 1], xyz[3 * tet.v[2] + 2]);
+        nvec3<double> d(xyz[3 * tet.v[3]], xyz[3 * tet.v[3] + 1], xyz[3 * tet.v[3] + 2]);
+        vol += (b - a).cross(c - a).dot(d - a) / 6.0;
+        for (int s = 0; s < nsite; ++s) {
+          bool vert = s == tet.v[0] || s == tet.v[1] || s == tet.v[2] || s == tet.v[3];
+          if (vert) continue;
+          int pos = 0;
+          int slots[4][3] = {{1, 3, 2}, {0, 2, 3}, {0, 3, 1}, {0, 1, 2}};
+          for (int k = 0; k < 4; ++k) {
+            int side = orient3d(xyz, tet.v[slots[k][0]], tet.v[slots[k][1]], tet.v[slots[k][2]], s);
+            if (side > 0) ++pos;
+          }
+          if (pos == 4) insideOk = false;
+          if (ntm::detail::inSphereGeom(xyz, tet.v[0], tet.v[1], tet.v[2], tet.v[3], s) > 0) sphereOk = false;
+        }
+      }
+      bool allUsed = true;
+      for (int i = 0; i < nsite; ++i)
+        if (!used[i]) allUsed = false;
+      double dx = (double)mesh.corner[6][0] - (double)mesh.corner[0][0];
+      double dy = (double)mesh.corner[6][1] - (double)mesh.corner[0][1];
+      double dz = (double)mesh.corner[6][2] - (double)mesh.corner[0][2];
+      double cube = dx * dy * dz;
+      bool volOk = std::fabs(vol - cube) <= 1e-5 * cube;
+      expect_true(indexOk, name);
+      expect_true(orientOk, name);
+      expect_true(linkOk, name);
+      expect_true(hull == 12, name);
+      expect_true(allUsed, name);
+      expect_true(insideOk, name);
+      expect_true(sphereOk, name);
+      expect_true(volOk, name);
+      delete[] xyz;
+      delete[] used;
+    };
+
+    ntm::TetMesh<float> tets;
+    expect_true(tets.count == 0, "a new tet mesh is empty");
+    tets.build(nullptr, 0);
+    expect_true(tets.count == 0 && tets.pointCount == 0, "an empty build stays empty");
+    nvec3<float> one(0.25f, -0.5f, 0.125f);
+    tets.build(&one, 1);
+    checkMesh("one point", &one, 1, tets);
+    ntm::TetMesh<float> share = tets;
+    expect_true(share.tets == tets.tets && share.count == tets.count, "a copy shares the tet array");
+    tets.clear();
+    expect_true(tets.tets == nullptr && tets.count == 0, "clear drops the tet array");
+
+    nvec3<float> dup[5];
+    for (int i = 0; i < 5; ++i) dup[i] = nvec3<float>(0.2f, 0.2f, 0.2f);
+    tets.build(dup, 5);
+    checkMesh("five duplicates", dup, 5, tets);
+    tets.clear();
+
+    nvec3<float> grid[27];
+    int ng = 0;
+    for (int z = 0; z < 3; ++z)
+      for (int y = 0; y < 3; ++y)
+        for (int x = 0; x < 3; ++x) grid[ng++] = nvec3<float>(x * 0.5f, y * 0.5f, z * 0.5f);
+    tets.build(grid, 27);
+    checkMesh("3x3x3 grid", grid, 27, tets);
+    tets.clear();
+
+    nvec3<float> rnd[25];
+    unsigned seed = 1;
+    for (int i = 0; i < 25; ++i) {
+      float p[3];
+      for (int a = 0; a < 3; ++a) {
+        seed = seed * 1664525u + 1013904223u;
+        p[a] = (seed >> 8) * (1.f / 16777216.f);
+      }
+      rnd[i] = nvec3<float>(p[0], p[1], p[2]);
+    }
+    rnd[24] = rnd[3];
+    tets.build(rnd, 25);
+    checkMesh("random points with a duplicate", rnd, 25, tets);
+    tets.clear();
   }
 
   const int nfail = g_fails - fails_before;

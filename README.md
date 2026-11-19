@@ -7,14 +7,25 @@ The purpose of this is to make a polygonal mesh data structure that is useful fo
 
 Topology is the whole of `ntmesh.h`. Numeric attributes, string attributes, and file IO are extra headers so a simple mesh never has to carry them if not needed.
 
+## Documentation
+
+- [Overview](docs/overview.md) — layout, ownership, winding, and which header to include
+- [ntmesh](docs/ntmesh.md) · [attributes](docs/ntmesh_attribs.md) · [strings](docs/ntmesh_strattr.md) · [files](docs/ntmesh_file.md) · [tets](docs/ntmesh_bw_tets.md)
+
+## Related
+
+- [ntv](https://github.com/ivandewolf1/ntv) is the vector and matrix library this mesh includes.
+- [ntmesh_ray](https://github.com/ivandewolf1/ntmesh_ray) is the polygon ray BVH and the CUDA sample.
+- [ntmesh_nearest](https://github.com/ivandewolf1/ntmesh_nearest) is the point-cloud nearest query.
+
 ## Headers
 
 | Include | Mesh type | What you get |
 |---------|-----------|----------------|
-| `ntmesh.h` | `ntm::ntmesh<T>` | simple polygonal mesh topology |
-| `ntmesh_attribs.h` | `ntm::ntmesh<T, ntm::WithAttribs>` | point/prim/vert/mesh attributes of type float or int and varying dimension |
-| `ntmesh_strattr.h` | `ntm::ntmesh<T, ntm::WithStrAttribs>` | point/prim/vert/mesh string attribs, unavailable on GPU |
-| `ntmesh_file.h` | any of the three | ASCII `.obj` and `.geo` read/write |
+| [`ntmesh.h`](docs/ntmesh.md) | `ntm::ntmesh<T>` | simple polygonal mesh topology |
+| [`ntmesh_attribs.h`](docs/ntmesh_attribs.md) | `ntm::ntmesh<T, ntm::WithAttribs>` | point/prim/vert/mesh attributes of type float or int and varying dimension |
+| [`ntmesh_strattr.h`](docs/ntmesh_strattr.md) | `ntm::ntmesh<T, ntm::WithStrAttribs>` | point/prim/vert/mesh string attribs, unavailable on GPU |
+| [`ntmesh_file.h`](docs/ntmesh_file.md) | any of the three | ASCII `.obj` and `.geo` read/write |
 
 `ntmesh.h` needs `nvec3.h` and `nmat4.h` from ntv on the include path. The attribute headers pull in the mesh header. A translation unit that only needs topology includes `ntmesh.h` and nothing else.
 
@@ -41,7 +52,7 @@ Each prim kind keeps its own index list:
 - An n-gon is a closed polygon. Face `f` uses `[ngonOffsets[f], ngonOffsets[f+1])`.
 - A line is an open polyline. Line `f` uses `[lineOffsets[f], lineOffsets[f+1])`.
 
-`addFace(corners, n)` files the prim by its corner count. Two corners go to the line list. With `separate` left on (the default), three corners go to the triangle list and four go to the quad list. Any other count goes to the n-gon list. Pass `separate = false` to store a triangle or a quad as an n-gon. A two-corner face is a line either way. `addLine` appends an open polyline of any length. `triangulate()` replaces every quad and n-gon with ear-clipped triangles and leaves lines alone. `reverse()` flips the corner order of every closed face and every line. `removeUnusedPoints()` deletes points that no corner references and remaps the index lists. `totalSurfaceArea()` and `totalVolume()` sum the face fans. `isClosed()` is true when every face edge has one opposite partner. `newell(corners, n)` is the raw Newell vector of a corner span, and `faceNormal(f)` is that vector made unit length. A line returns zero. Vertex and prim attributes are copied onto the new triangles.
+`addFace(corners, n)` files the prim by its corner count. Two corners go to the line list. With `separate` left on (the default), three corners go to the triangle list and four go to the quad list. Any other count goes to the n-gon list. Pass `separate = false` to store a triangle or a quad as an n-gon. A two-corner face is a line either way. `addLine` appends an open polyline of any length. `triangulate()` replaces every quad and n-gon with ear-clipped triangles and leaves lines alone. `triangulateNgons()` does that for n-gons only. Both return false, and leave the mesh unchanged, when scratch memory is unavailable. A face that falls back to a fan still counts as success. `reverse()` flips the corner order of every closed face and every line. `removeUnusedPoints()` deletes points that no corner references and remaps the index lists. `totalSurfaceArea()` and `totalVolume()` sum the face fans. `isClosed()` is true when every face edge has one opposite partner. `newell(corners, n)` is the raw Newell vector of a corner span, and `faceNormal(f)` is that vector made unit length. A line returns zero. Vertex and prim attributes are copied onto the new triangles.
 
 `primVertex` walks one combined prim order: triangles, then quads, then n-gons, then lines. Vertex and prim attributes, when present, follow that same order. `primCount` and `vertexCount` include every list.
 
@@ -113,7 +124,7 @@ Both allocate new buffers. Freeing the string mesh does not free the dump.
 
 `ntmesh_file.h` reads and writes ASCII Wavefront `.obj` and ASCII Houdini `.geo`. `readFile` and `writeFile` pick the format from the suffix. This header is host-only. A device file does not include it.
 
-`.obj` stores points, faces, and `l` lines. On an attributed mesh, a point or vertex `N` is written as `vn`, and `uv` as `vt`. `.geo` is the text JSON geometry document: polygon runs, the point buffer as `P`, and numeric columns on every domain. String columns are written only for `WithStrAttribs`. A plain `ntmesh<T>` still reads the points and the faces from either format. An open `PolygonCurve_run` is read as a line. `readFile(mesh, path, separate)` uses the same filing rule as `addFace`. The default keeps 3-corner faces as triangles and 4-corner faces as quads. Pass `false` to put every closed face on the n-gon list, in file order.
+`.obj` stores points, faces, and `l` lines. On an attributed mesh, a point or vertex `N` is written as `vn`, and `uv` as `vt`. `.geo` is the text JSON geometry document: polygon runs, the point buffer as `P`, and numeric columns on every domain. String columns are written only for `WithStrAttribs`. A plain `ntmesh<T>` still reads the points and the faces from either format. An open polyline is written as a `PolygonCurve_run`, and read back as a line. `readFile(mesh, path, separate)` uses the same filing rule as `addFace`. The default keeps 3-corner faces as triangles and 4-corner faces as quads. Pass `false` to put every closed face on the n-gon list, in file order.
 
 ```cpp
 #include "ntmesh_file.h"
@@ -137,11 +148,12 @@ After uploading, rewrite every pointer in the copy to its device address: the `B
 
 ## Tests
 
+`NTV_ROOT` is the ntv repository, the directory that contains `src/nvec3.h`. A `-DNTV_ROOT=` argument wins, then the `NTV_ROOT` environment variable, then `../ntv/ntv` beside this repo. Configuration stops if it is still missing. Run the binary from the repository root so the tests open `samplegeo/`.
+
 ```
-g++ -std=c++17 -Wall -Wextra -Wpedantic \
-    -I src -I test -I /path/to/ntv/src \
-    test/main.C test/test_ntmesh.C -o ntmesh_tests
-./ntmesh_tests
+cmake -S . -B build
+cmake --build build
+./build/ntmesh_tests
 ```
 
 ## Dev notes

@@ -36,7 +36,10 @@ struct StringSet {
 
 inline void stringSetReserve(StringSet& s, int cap) {
     if (cap <= s.capacity) return;
-    s.data = static_cast<StringAttribute*>(std::realloc(s.data, sizeof(StringAttribute) * (size_t)cap));
+    StringAttribute* grown =
+        static_cast<StringAttribute*>(std::realloc(s.data, sizeof(StringAttribute) * (size_t)cap));
+    if (!grown) return;
+    s.data = grown;
     s.capacity = cap;
 }
 
@@ -68,6 +71,7 @@ inline void stringInsert(StringAttribute& a, int at, int n) {
     if (at > a.indices.count) at = a.indices.count;
     int old = a.indices.count;
     bufReserve(a.indices, old + n);
+    if (a.indices.capacity < old + n) return;
     if (at < old && a.indices.data)
         std::memmove(a.indices.data + at + n, a.indices.data + at, sizeof(int) * (size_t)(old - at));
     for (int i = 0; i < n; ++i) a.indices.data[at + i] = 0;

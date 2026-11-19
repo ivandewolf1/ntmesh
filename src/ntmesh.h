@@ -36,7 +36,9 @@ struct Buf {
 template <typename T>
 void bufReserve(Buf<T>& b, int cap) {
     if (cap <= b.capacity) return;
-    b.data = static_cast<T*>(std::realloc(b.data, sizeof(T) * (size_t)cap));
+    T* grown = static_cast<T*>(std::realloc(b.data, sizeof(T) * (size_t)cap));
+    if (!grown) return;
+    b.data = grown;
     b.capacity = cap;
 }
 
@@ -45,6 +47,7 @@ template <typename T>
 void bufFit(Buf<T>& b, int n) {
     if (n < 0) n = 0;
     if (n > b.capacity) bufReserve(b, n);
+    if (n > b.capacity) return;
     for (int i = b.count; i < n; ++i) b.data[i] = T();
     b.count = n;
 }
@@ -171,28 +174,34 @@ struct ntmesh : Attr {
     void clear();
     void print() const;
     int  addPoint(ntv::nvec3<T> p);
-    // A 2-corner prim goes in the line lists, a 3-corner prim goes in
-    // triangleIndices, and a 4-corner prim in quadIndices. 
-    // More than 4 corners go in the n-gon list, 
-    // unless separate is true, in which case it goes in the n-gon list.
+    // A 2-corner prim goes in the line lists either way. With separate left on,
+    // a 3-corner prim goes in triangleIndices and a 4-corner prim in quadIndices.
+    // More than 4 corners go in the n-gon list. separate == false stores a
+    // 3-corner or 4-corner face there too.
     void addFace(const int* cornerPoints, int n, bool separate = true);
     void addLine(const int* points, int n);
     // Quads and n-gons become triangles. Lines stay. Each new triangle keeps the
     // source winding, and vertex and prim attributes are copied onto it.
-    void triangulate();
+    // A fanned face still counts as success. False leaves the mesh unchanged.
+    bool triangulate();
+    // N-gons become triangles. Quads, existing triangles, and lines stay.
+    // A fanned face still counts as success. False leaves the mesh unchanged.
+    bool triangulateNgons();
     // Flip the corner order of every closed face and every line. Vertex attributes move with their corners.
     void reverse();
     // Drop points that no corner references and remap the index lists. Point attributes move with the survivors.
     void removeUnusedPoints();
     // Sum of the face areas. Lines add nothing. Each face is the fan from its first corner.
     NTL_HD T totalSurfaceArea() const; // nice-to-have
-    // Signed volume of the face fans. Positive when faces wind outward. Meaningful when isClosed() is true.
+    // Signed volume of the face fans. Positive for clockwise
+    // when seen from the outside. Meaningful when isClosed() is true.
     NTL_HD T totalVolume() const; // nice-to-have
     // Every face edge has one opposite partner. Lines are ignored. No faces means not closed.
     int isClosed() const; // nice-to-have
-    // Raw Newell vector of a corner span. Its length is twice the planar area. Fewer than three corners returns zero.
+    // Raw Newell vector of a corner span, pointed along the front face normal.
+    // Its length is twice the planar area. Fewer than three corners returns zero.
     NTL_HD ntv::nvec3<T> newell(const int* corners, int n) const;
-    // Unit Newell normal of prim f. A line, a degenerate face, and an out-of-range prim return zero.
+    // Unit front normal of prim f. A line, a degenerate face, and an out-of-range prim return zero.
     NTL_HD ntv::nvec3<T> faceNormal(int f) const;
     // The point buffer and Position attributes take the full matrix. Normals take the
     // inverse transpose of the linear 3x3 and are renormalized. Color, float,
@@ -477,7 +486,7 @@ NTL_HD ntv::nvec3<T> ntmesh<T, Attr>::newell(const int* corners, int n) const {
         sum[1] += (a[2] - b[2]) * (a[0] + b[0]);
         sum[2] += (a[0] - b[0]) * (a[1] + b[1]);
     }
-    return sum;
+    return -sum;
 }
 
 template <typename T, typename Attr>
@@ -668,10 +677,10 @@ void clipFace(const ntmesh<T, Attr>& mesh, const int* poly, const int* srcV, int
 
 // Replace quads and n-gons with triangles. Existing triangles stay first.
 template <typename T, typename Attr>
-void ntmesh<T, Attr>::triangulate() {
+bool ntmesh<T, Attr>::triangulate() {
     int nq = quadCount();
     int nn = ngonCount();
-    if (nq == 0 && nn == 0) return;
+    if (nq == 0 && nn == 0) return true;
 
     int newTris = nq * 2;
     for (int f = 0; f < nn; ++f) {
@@ -717,6 +726,12 @@ void ntmesh<T, Attr>::triangulate() {
             vrun += nv;
         }
     }
+    if (written != newTris) {
+        std::free(dstPts);
+        std::free(dstSrcV);
+        std::free(dstSrcP);
+        return false;
+    }
 
     int newV = written * 3;
     int newF = written;
@@ -746,6 +761,85 @@ void ntmesh<T, Attr>::triangulate() {
     std::free(dstPts);
     std::free(dstSrcV);
     std::free(dstSrcP);
+    return true;
+}
+
+// Replace n-gons with triangles. Quads, existing triangles, and lines stay.
+template <typename T, typename Attr>
+bool ntmesh<T, Attr>::triangulateNgons() {
+    int nn = ngonCount();
+    if (nn == 0) return true;
+
+    int nq = quadCount();
+    int newTris = 0;
+    for (int f = 0; f < nn; ++f) {
+        int nv = ngonVertexCount(f);
+        if (nv >= 3) newTris += nv - 2;
+    }
+    int triV = triangleIndices.count;
+    int triF = triangleCount();
+    int oldNgonV = ngonIndices.count;
+
+    int* dstPts = newTris > 0 ? static_cast<int*>(std::malloc(sizeof(int) * (size_t)newTris * 3)) : nullptr;
+    int* dstSrcV = newTris > 0 ? static_cast<int*>(std::malloc(sizeof(int) * (size_t)newTris * 3)) : nullptr;
+    int* dstSrcP = newTris > 0 ? static_cast<int*>(std::malloc(sizeof(int) * (size_t)newTris)) : nullptr;
+    int written = 0;
+    if (newTris > 0 && dstPts && dstSrcV && dstSrcP) {
+        int vbase = triV + quadIndices.count;
+        int vrun = 0;
+        for (int f = 0; f < nn; ++f) {
+            int nv = ngonVertexCount(f);
+            if (nv >= 3) {
+                int* poly = static_cast<int*>(std::malloc(sizeof(int) * (size_t)nv * 2));
+                if (poly) {
+                    int* sv = poly + nv;
+                    for (int k = 0; k < nv; ++k) {
+                        poly[k] = ngonIndices[ngonOffsets[f] + k];
+                        sv[k] = vbase + vrun + k;
+                    }
+                    earclip::clipFace(*this, poly, sv, nv, triF + nq + f,
+                                      dstPts, dstSrcV, dstSrcP, written);
+                    std::free(poly);
+                }
+            }
+            vrun += nv;
+        }
+    }
+    if (written != newTris) {
+        std::free(dstPts);
+        std::free(dstSrcV);
+        std::free(dstSrcP);
+        return false;
+    }
+
+    int newV = written * 3;
+    int newF = written;
+    if (newV > 0) this->attrInsertVerts(triV, newV);
+    for (int i = 0; i < newV; ++i) {
+        int src = dstSrcV[i];
+        if (src >= triV) src += newV;
+        this->attrCopyVert(triV + i, src);
+    }
+    if (oldNgonV > 0) this->attrEraseVerts(triV + newV + quadIndices.count, oldNgonV);
+
+    if (newF > 0) this->attrInsertPrims(triF, newF);
+    for (int i = 0; i < newF; ++i) {
+        int src = dstSrcP[i];
+        if (src >= triF) src += newF;
+        this->attrCopyPrim(triF + i, src);
+    }
+    if (nn > 0) this->attrErasePrims(triF + newF + nq, nn);
+
+    if (newV > 0) {
+        bufFit(triangleIndices, triV + newV);
+        for (int i = 0; i < newV; ++i) triangleIndices[triV + i] = dstPts[i];
+    }
+    bufFit(ngonIndices, 0);
+    bufFit(ngonOffsets, 0);
+    std::free(dstPts);
+    std::free(dstSrcV);
+    std::free(dstSrcP);
+    return true;
 }
 
 // Flip corner order. Vertex attributes for those corners swap with them.
@@ -844,7 +938,7 @@ NTL_HD void addPolygonFan(const ntv::nvec3<T>* pts, int npts, const int* idx, in
         vol += p0.dot(a.cross(b));
     }
     area += acc.length() * T(0.5);
-    volume += vol / T(6);
+    volume -= vol / T(6);
 }
 
 template <typename T, typename Attr>
@@ -928,7 +1022,7 @@ int ntmesh<T, Attr>::isClosed() const {
     return closed;
 }
 
-// print a mesh. Uses printf, safe for cuda
+// print a mesh. Uses printf, cannot print from GPU, but the header is CUDA safe.
 template <typename T, typename Attr>
 void ntmesh<T, Attr>::print() const {
     std::printf("ntmesh points %d vertices %d prims %d tris %d quads %d ngons %d lines %d\n",

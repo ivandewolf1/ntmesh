@@ -80,13 +80,16 @@ inline void setName(char* dst, const char* name) {
 
 inline void attribReserve(Attribute& a, int cap) {
     if (cap <= a.capacity) return;
-    a.data = std::realloc(a.data, (size_t)elemStride(a) * (size_t)cap);
+    void* grown = std::realloc(a.data, (size_t)elemStride(a) * (size_t)cap);
+    if (!grown) return;
+    a.data = grown;
     a.capacity = cap;
 }
 
 inline void attribResize(Attribute& a, int n) {
     if (n < 0) n = 0;
     if (n > a.capacity) attribReserve(a, n);
+    if (n > a.capacity) return;
     if (n > a.count && a.data)
         std::memset((char*)a.data + (size_t)elemStride(a) * (size_t)a.count, 0,
                     (size_t)elemStride(a) * (size_t)(n - a.count));
@@ -95,7 +98,9 @@ inline void attribResize(Attribute& a, int n) {
 
 inline void setReserve(AttributeSet& s, int cap) {
     if (cap <= s.capacity) return;
-    s.data = static_cast<Attribute*>(std::realloc(s.data, sizeof(Attribute) * (size_t)cap));
+    Attribute* grown = static_cast<Attribute*>(std::realloc(s.data, sizeof(Attribute) * (size_t)cap));
+    if (!grown) return;
+    s.data = grown;
     s.capacity = cap;
 }
 
@@ -110,6 +115,7 @@ inline void attribInsert(Attribute& a, int at, int n) {
     if (at > a.count) at = a.count;
     int old = a.count;
     attribResize(a, old + n);
+    if (a.count != old + n) return;
     int stride = elemStride(a);
     if (!a.data || stride <= 0) return;
     if (at < old)

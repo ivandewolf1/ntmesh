@@ -7,6 +7,16 @@ The purpose of this is to make a polygonal mesh data structure that is useful fo
 
 Topology is the whole of `ntmesh.h`. Numeric attributes, string attributes, and file IO are extra headers so a simple mesh never has to carry them if not needed.
 
+## Samples
+
+- [bunny_grid](samples/grid/src/main.C) reads `samplegeo/mixed_manifold_bunny.geo` and writes a 4×4 grid on the XZ plane, centered on the origin. `samples/grid/plain.geo` is the topology. `samples/grid/attrib.geo` is the same placement with point `N`, vertex `uv`, and primitive `Cd`. The negative-X columns yaw about Y. The positive-X columns use a random axis and angle.
+- [tet_edges](samples/tets/src/main.C) reads `samplegeo/light_bunny.geo`, builds a `TetMesh`, and writes each tet edge once to `samples/tets/edges.geo`. The eight cube corners are included.
+
+```
+./build/bunny_grid
+./build/tet_edges
+```
+
 ## Documentation
 
 - [Overview](docs/overview.md) — layout, ownership, winding, and which header to include
@@ -145,17 +155,6 @@ The topology mesh and the numeric-attribute mesh are trivially copyable. The byt
 Left undefined, `NTL_HD` is empty and the headers stay host-only. Accessors are marked with it. Allocation, `merge`, `trim`, and `transform` stay on the host.
 
 After uploading, rewrite every pointer in the copy to its device address: the `Buf` data pointers, and, for `WithAttribs`, each attribute's `data` pointer and the attribute-set pointer. Do not upload an `ntmesh<T, WithStrAttribs>`.
-
-## Samples
-
-`bunny_grid` reads `samplegeo/mixed_manifold_bunny.geo` and writes a 4×4 grid on the XZ plane, centered on the origin. `samples/grid/plain.geo` is the topology. `samples/grid/attrib.geo` is the same placement with point `N`, vertex `uv`, and primitive `Cd`. The negative-X columns yaw about Y. The positive-X columns use a random axis and angle.
-
-`tet_edges` reads `samplegeo/light_bunny.geo`, builds a `TetMesh`, and writes each tet edge once to `samples/tets/edges.geo`. The eight cube corners are included.
-
-```
-./build/bunny_grid
-./build/tet_edges
-```
 
 ## Tests
 

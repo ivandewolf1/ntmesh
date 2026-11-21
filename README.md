@@ -146,6 +146,17 @@ Left undefined, `NTL_HD` is empty and the headers stay host-only. Accessors are 
 
 After uploading, rewrite every pointer in the copy to its device address: the `Buf` data pointers, and, for `WithAttribs`, each attribute's `data` pointer and the attribute-set pointer. Do not upload an `ntmesh<T, WithStrAttribs>`.
 
+## Samples
+
+`bunny_grid` reads `samplegeo/mixed_manifold_bunny.geo` and writes a 4×4 grid on the XZ plane, centered on the origin. `samples/grid/plain.geo` is the topology. `samples/grid/attrib.geo` is the same placement with point `N`, vertex `uv`, and primitive `Cd`. The negative-X columns yaw about Y. The positive-X columns use a random axis and angle.
+
+`tet_edges` reads `samplegeo/light_bunny.geo`, builds a `TetMesh`, and writes each tet edge once to `samples/tets/edges.geo`. The eight cube corners are included.
+
+```
+./build/bunny_grid
+./build/tet_edges
+```
+
 ## Tests
 
 `NTV_ROOT` is the ntv repository, the directory that contains `src/nvec3.h`. A `-DNTV_ROOT=` argument wins, then the `NTV_ROOT` environment variable, then `../ntv/ntv` beside this repo. Configuration stops if it is still missing. Run the binary from the repository root so the tests open `samplegeo/`.

@@ -22,12 +22,35 @@ if(NOT EXISTS "${NTV_ROOT}/src/nvec3.h")
   message(FATAL_ERROR "NTV_ROOT does not contain src/nvec3.h: ${NTV_ROOT}")
 endif()
 
-add_executable(ntmesh_tests test/main.C test/test_ntmesh.C)
-target_include_directories(ntmesh_tests PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/src
-  ${CMAKE_CURRENT_SOURCE_DIR}/test
-  ${NTV_ROOT}/src
+set(MIXED_BUNNY "${CMAKE_CURRENT_SOURCE_DIR}/samplegeo/mixed_manifold_bunny.geo")
+set(LIGHT_BUNNY "${CMAKE_CURRENT_SOURCE_DIR}/samplegeo/light_bunny.geo")
+if(NOT EXISTS "${MIXED_BUNNY}")
+  message(FATAL_ERROR "missing samplegeo/mixed_manifold_bunny.geo")
+endif()
+if(NOT EXISTS "${LIGHT_BUNNY}")
+  message(FATAL_ERROR "missing samplegeo/light_bunny.geo")
+endif()
+
+function(nt_mesh_target name)
+  add_executable(${name} ${ARGN})
+  target_include_directories(${name} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/test
+    ${NTV_ROOT}/src
+  )
+  target_compile_options(${name} PRIVATE -Wall -Wextra -Wpedantic)
+endfunction()
+
+nt_mesh_target(ntmesh_tests test/main.C test/test_ntmesh.C)
+nt_mesh_target(bunny_grid samples/grid/src/main.C)
+target_compile_definitions(bunny_grid PRIVATE
+  BUNNY_GEO="${MIXED_BUNNY}"
+  OUT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/samples/grid"
 )
-target_compile_options(ntmesh_tests PRIVATE -Wall -Wextra -Wpedantic)
+nt_mesh_target(tet_edges samples/tets/src/main.C)
+target_compile_definitions(tet_edges PRIVATE
+  LIGHT_BUNNY="${LIGHT_BUNNY}"
+  OUT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/samples/tets"
+)
 
 message(STATUS "NTV_ROOT: ${NTV_ROOT}")

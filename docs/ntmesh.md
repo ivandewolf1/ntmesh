@@ -180,7 +180,7 @@ Host only. Each point becomes `m * point`, the ntv affine product, so translatio
 
 ### `copyMesh(dst, src)`
 
-Deep copy into a mesh with the same attribute policy. Point components convert from `Src` to `Dst`. `dst` is cleared first.
+Deep copy. Point components convert from `Src` to `Dst`. `dst` is cleared first. The same policy copies its columns as bytes. `WithAttribs<Src>` onto `WithAttribs<Dst>`, and `WithStrAttribs<Src>` onto `WithStrAttribs<Dst>`, converts each numeric component. `Int` columns are copied as `int`.
 
 ### `copyTopo(dst, src)`
 

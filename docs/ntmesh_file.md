@@ -9,7 +9,7 @@ ntm::readFile(mesh, "box.obj");
 ntm::writeFile(mesh, "box.geo");
 ```
 
-Host only. Include it from a host translation unit, not from a `.cu`. It works on a plain mesh, a `WithAttribs` mesh, and a `WithStrAttribs` mesh. A plain `ntmesh<T>` still reads the points and the faces. Numeric columns are read and written for `WithAttribs`. String columns are read and written only for `WithStrAttribs`.
+Host only. Include it from a host translation unit, not from a `.cu`. It works on a plain mesh, a `WithAttribs<T>` mesh, and a `WithStrAttribs<T>` mesh. A plain `ntmesh<T>` still reads the points and the faces. Numeric columns are read and written for `WithAttribs<T>`. String columns are read and written only for `WithStrAttribs<T>`.
 
 `readFile` and `writeFile` pick the format from the suffix, compared without case. Anything else returns 0. Both return 1 on success and 0 on failure.
 
@@ -60,10 +60,10 @@ On an attributed mesh, a vertex `N` of kind `Normal` and tuple size at least 3 i
 
 ### `.geo`
 
-One text JSON document. Topology is polygon runs: a closed face is `Polygon_run`, an open polyline is `PolygonCurve_run`. The point buffer is written as `P`, `fpreal64` when `T` is `double` and `fpreal32` otherwise. Numeric columns on every domain are written in order. String columns are written only for `WithStrAttribs`. A point column named `P` is not written a second time.
+One text JSON document. Topology is polygon runs: a closed face is `Polygon_run`, an open polyline is `PolygonCurve_run`. The point buffer is written as `P`, `fpreal64` when `T` is `double` and `fpreal32` otherwise. Numeric columns use that same storage. A file of either storage is cast into `T` on read. String columns are written only for `WithStrAttribs<T>`. A point column named `P` is not written a second time.
 
 ```cpp
-ntm::ntmesh<float, ntm::WithAttribs> mesh;
+ntm::ntmesh<float, ntm::WithAttribs<float>> mesh;
 if (!ntm::readFile(mesh, "samplegeo/light_bunny.geo")) { /* failed */ }
 ntm::writeFile(mesh, "out.obj");
 mesh.clear();

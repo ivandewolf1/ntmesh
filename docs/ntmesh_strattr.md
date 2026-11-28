@@ -5,7 +5,7 @@ Host-only string columns on top of the numeric ones. Header: [`src/ntmesh_stratt
 ```cpp
 #include "ntmesh_strattr.h"
 
-ntm::ntmesh<float, ntm::WithStrAttribs> mesh;
+ntm::ntmesh<float, ntm::WithStrAttribs<float>> mesh;
 mesh.addPoint(ntv::nvec3<float>(0, 0, 0));
 mesh.setString(*mesh.addPointString("mat"), 0, "oak");
 const char* s = mesh.getString(*mesh.findPointString("mat"), 0);
@@ -34,9 +34,9 @@ Every string value is an `int` index into one `std::vector<std::string> pool`. A
 
 ---
 
-## `WithStrAttribs`
+## `WithStrAttribs<T>`
 
-Extends `WithAttribs`, so every numeric call is still there.
+Extends `WithAttribs<T>`, so every numeric call is still there. The numeric columns use the same `T` as the points.
 
 | Member | Domain |
 |--------|--------|
@@ -68,14 +68,14 @@ Both helpers allocate new buffers. Freeing the string mesh does not free the dum
 
 | API | Destination | What is copied |
 |-----|-------------|----------------|
-| `copyTopo(dst, src)` | `ntmesh<Dst, None>` or `ntmesh<Dst, WithAttribs>` | Points and the four prim lists. Attributes on `dst` are dropped |
-| `copyNumeric(dst, src)` | `ntmesh<Dst, WithAttribs>` | Those, plus the numeric columns. The pool stays behind |
-| `copyMesh(dst, src)` | same policy on both | Full deep copy, including the pool when both sides are `WithStrAttribs` |
+| `copyTopo(dst, src)` | `ntmesh<Dst, None>` or `ntmesh<Dst, WithAttribs<Dst>>` | Points and the four prim lists. Attributes on `dst` are dropped |
+| `copyNumeric(dst, src)` | `ntmesh<Dst, WithAttribs<Dst>>` | Those, plus the numeric columns. The pool stays behind. Numeric columns convert when the scalars differ |
+| `copyMesh(dst, src)` | same policy, or `WithStrAttribs<Src>` onto `WithStrAttribs<Dst>` | Full deep copy, including the pool. Numeric columns convert when the scalars differ |
 
-Point components convert from `Src` to `Dst`.
+Point components convert from `Src` to `Dst`. `Int` columns are copied as `int`.
 
 ```cpp
-ntm::ntmesh<float, ntm::WithAttribs> gpu;
+ntm::ntmesh<float, ntm::WithAttribs<float>> gpu;
 ntm::copyNumeric(gpu, mesh);
 mesh.clear();
 ```

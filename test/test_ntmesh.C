@@ -8,14 +8,14 @@
 #include <cmath>
 
 using ntm::Type;
-using ntm::Attribute;
+using Attribute = ntm::Attribute<float>;
 using ntm::ntmesh;
 using ntm::readFile;
 using ntm::writeFile;
 using ntv::nvec3;
 
-using AMesh = ntm::ntmesh<float, ntm::WithAttribs>;
-using SMesh = ntm::ntmesh<float, ntm::WithStrAttribs>;
+using AMesh = ntm::ntmesh<float, ntm::WithAttribs<float>>;
+using SMesh = ntm::ntmesh<float, ntm::WithStrAttribs<float>>;
 
 void
 ntmeshTest()
@@ -224,13 +224,14 @@ ntmeshTest()
 
   // double CPU mesh copied into a float mesh
   {
-    ntmesh<double, ntm::WithAttribs> cpu;
+    ntmesh<double, ntm::WithAttribs<double>> cpu;
     int p0 = cpu.addPoint(nvec3<double>(0.5, 1.5, 2.5));
     int p1 = cpu.addPoint(nvec3<double>(1, 0, 0));
     int p2 = cpu.addPoint(nvec3<double>(0, 1, 0));
     int tri[] = {p0, p1, p2};
     cpu.addFace(tri, 3);
-    cpu.addPointAttrib("N", Type::Normal, 3)->floatAt(1)[0] = 1.f;
+    cpu.addPointAttrib("N", Type::Normal, 3)->floatAt(1)[0] = 1.0;
+    expect_true(sizeof(*cpu.findPointAttrib("N")->floatAt(0)) == sizeof(double), "double column");
     cpu.addVertexAttrib("id", Type::Int, 1)->intAt(2)[0] = 9;
     cpu.addMeshAttrib("piece", Type::Int, 1)->intAt(0)[0] = 6;
 
@@ -259,6 +260,22 @@ ntmeshTest()
     ntm::copyMesh(gpu, gpu);
     expect_true(gpu.pointCount() == 3, "self copy keeps points");
     expect_true(gpu.findPointAttrib("N")->floatAt(1)[0] == 0.f, "self copy keeps normal");
+
+    const char* dblPath = "test/_tmp_double.geo";
+    expect_true(writeFile(cpu, dblPath) == 1, "write double geo");
+    char buf[65536];
+    FILE* fp = std::fopen(dblPath, "rb");
+    int nread = fp ? (int)std::fread(buf, 1, sizeof(buf) - 1, fp) : 0;
+    if (fp) std::fclose(fp);
+    buf[nread > 0 ? nread : 0] = 0;
+    int n64 = 0;
+    for (char* s = buf; (s = std::strstr(s, "fpreal64")) != nullptr; s += 8) ++n64;
+    expect_true(n64 == 4, "double columns stored as fpreal64");
+    ntmesh<double, ntm::WithAttribs<double>> dblBack;
+    expect_true(readFile(dblBack, dblPath) == 1, "read double geo");
+    expect_true(dblBack.findPointAttrib("N")->floatAt(1)[0] == 1.0, "double geo normal");
+    dblBack.clear();
+    std::remove(dblPath);
 
     gpu.clear();
     again.clear();

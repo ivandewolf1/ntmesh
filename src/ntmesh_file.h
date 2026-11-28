@@ -20,8 +20,8 @@ namespace ntm {
 
 template <typename T, typename Attr>
 struct IoTraits {
-    static constexpr bool numeric = std::is_base_of<WithAttribs, Attr>::value;
-    static constexpr bool strings = std::is_base_of<WithStrAttribs, Attr>::value;
+    static constexpr bool numeric = std::is_base_of<WithAttribs<T>, Attr>::value;
+    static constexpr bool strings = std::is_base_of<WithStrAttribs<T>, Attr>::value;
 };
 
 namespace io {
@@ -576,7 +576,8 @@ inline JVal numericColumn(const char* name, Type kind, int tupleSize, const std:
     return entry;
 }
 
-inline void collectColumn(const Attribute& col, std::vector<double>& values) {
+template <typename T>
+inline void collectColumn(const Attribute<T>& col, std::vector<double>& values) {
     int n = col.count;
     int w = col.tupleSize < 1 ? 1 : col.tupleSize;
     values.assign((size_t)n * (size_t)w, 0);
@@ -585,19 +586,22 @@ inline void collectColumn(const Attribute& col, std::vector<double>& values) {
             const int* slot = col.intAt(i);
             for (int c = 0; c < w; ++c) values[(size_t)i * (size_t)w + (size_t)c] = slot[c];
         } else {
-            const float* slot = col.floatAt(i);
-            for (int c = 0; c < w; ++c) values[(size_t)i * (size_t)w + (size_t)c] = slot[c];
+            const T* slot = col.floatAt(i);
+            for (int c = 0; c < w; ++c) values[(size_t)i * (size_t)w + (size_t)c] = (double)slot[c];
         }
     }
 }
 
-inline void appendColumns(JVal& list, const AttributeSet& set, int skipP) {
+template <typename T>
+inline void appendColumns(JVal& list, const AttributeSet<T>& set, int skipP) {
     for (int i = 0; i < set.count; ++i) {
-        const Attribute& col = set.data[i];
+        const Attribute<T>& col = set.data[i];
         if (skipP && std::strcmp(col.name, "P") == 0) continue;
         std::vector<double> values;
         collectColumn(col, values);
-        list.arr.push_back(numericColumn(col.name, col.kind, col.tupleSize < 1 ? 1 : col.tupleSize, values));
+        const char* storage = col.kind == Type::Int ? "int32"
+            : (sizeof(T) == sizeof(double) ? "fpreal64" : "fpreal32");
+        list.arr.push_back(numericColumn(col.name, col.kind, col.tupleSize < 1 ? 1 : col.tupleSize, values, storage));
     }
 }
 
@@ -797,7 +801,7 @@ void loadAttribList(ntmesh<T, Attr>& mesh, const io::JVal* list, io::Domain doma
             io::PackedRef packed = io::findPacked(body);
             if (!packed.node) continue;
             std::vector<double> values = io::flattenNumbers(*packed.node, tuple, packed.soa);
-            Attribute* col = nullptr;
+            Attribute<T>* col = nullptr;
             if (domain == io::Domain::Point) col = mesh.addPointAttrib(name, kind, tuple);
             else if (domain == io::Domain::Vertex) col = mesh.addVertexAttrib(name, kind, tuple);
             else if (domain == io::Domain::Prim) col = mesh.addFaceAttrib(name, kind, tuple);
@@ -816,9 +820,9 @@ void loadAttribList(ntmesh<T, Attr>& mesh, const io::JVal* list, io::Domain doma
                     for (int c = 0; c < width; ++c)
                         slot[c] = (int)values[(size_t)i * (size_t)tuple + (size_t)c];
                 } else {
-                    float* slot = col->floatAt(dst);
+                    T* slot = col->floatAt(dst);
                     for (int c = 0; c < width; ++c)
-                        slot[c] = (float)values[(size_t)i * (size_t)tuple + (size_t)c];
+                        slot[c] = (T)values[(size_t)i * (size_t)tuple + (size_t)c];
                 }
             }
         }
@@ -971,7 +975,7 @@ int writeGeo(const ntmesh<T, Attr>& mesh, const char* path) {
                     const int* slot = data ? static_cast<const int*>(data) + (size_t)i * (size_t)width : nullptr;
                     out.addInt(slot ? slot[c] : 0);
                 } else {
-                    const float* slot = data ? static_cast<const float*>(data) + (size_t)i * (size_t)width : nullptr;
+                    const T* slot = data ? static_cast<const T*>(data) + (size_t)i * (size_t)width : nullptr;
                     out.addFloat(slot ? (double)slot[c] : 0);
                 }
             }
@@ -1087,13 +1091,14 @@ int writeGeo(const ntmesh<T, Attr>& mesh, const char* path) {
     }
     out.raw("]\n\t\t\t\t\t]\n\t\t\t\t]\n\t\t\t]");
 
-    auto writeAttribSet = [&](const AttributeSet& set, int skipP) {
+    auto writeAttribSet = [&](const AttributeSet<T>& set, int skipP) {
         for (int i = 0; i < set.count; ++i) {
-            const Attribute& a = set.data[i];
+            const Attribute<T>& a = set.data[i];
             if (skipP && std::strcmp(a.name, "P") == 0) continue;
             columnComma();
             int width = a.tupleSize < 1 ? 1 : a.tupleSize;
-            const char* storage = a.kind == Type::Int ? "int32" : "fpreal32";
+            const char* storage = a.kind == Type::Int ? "int32"
+                : (sizeof(T) == sizeof(double) ? "fpreal64" : "fpreal32");
             writeNumeric(a.name, a.kind, width, a.count, a.kind == Type::Int, a.data, storage);
         }
     };
@@ -1103,7 +1108,7 @@ int writeGeo(const ntmesh<T, Attr>& mesh, const char* path) {
             writeStringColumn(set.data[i], pool);
         }
     };
-    auto writeDomain = [&](const char* key, const AttributeSet* nums, int skipP, const StringSet* strs,
+    auto writeDomain = [&](const char* key, const AttributeSet<T>* nums, int skipP, const StringSet* strs,
                            const std::vector<std::string>* pool) {
         int any = 0;
         if (nums) {
@@ -1127,9 +1132,9 @@ int writeGeo(const ntmesh<T, Attr>& mesh, const char* path) {
     if constexpr (IoTraits<T, Attr>::strings) writeStringSet(mesh.pointStrings, mesh.pool);
     out.raw("\n\t\t]");
     if constexpr (IoTraits<T, Attr>::numeric || IoTraits<T, Attr>::strings) {
-        const AttributeSet* vn = nullptr;
-        const AttributeSet* fn = nullptr;
-        const AttributeSet* dn = nullptr;
+        const AttributeSet<T>* vn = nullptr;
+        const AttributeSet<T>* fn = nullptr;
+        const AttributeSet<T>* dn = nullptr;
         const StringSet* vs = nullptr;
         const StringSet* fs = nullptr;
         const StringSet* ds = nullptr;
@@ -1317,44 +1322,44 @@ int readObj(ntmesh<T, Attr>& mesh, const char* path, bool separate = true) {
         if ((int)nrm.size() != mesh.pointCount()) pointN = 0;
         if ((int)(uv.size() / 3) != mesh.pointCount()) pointUv = 0;
         if (anyN && pointN) {
-            Attribute* N = mesh.addPointAttrib("N", Type::Normal, 3);
+            Attribute<T>* N = mesh.addPointAttrib("N", Type::Normal, 3);
             for (int i = 0; i < mesh.pointCount() && i < (int)nrm.size(); ++i) {
-                N->floatAt(i)[0] = (float)nrm[(size_t)i][0];
-                N->floatAt(i)[1] = (float)nrm[(size_t)i][1];
-                N->floatAt(i)[2] = (float)nrm[(size_t)i][2];
+                N->floatAt(i)[0] = (T)nrm[(size_t)i][0];
+                N->floatAt(i)[1] = (T)nrm[(size_t)i][1];
+                N->floatAt(i)[2] = (T)nrm[(size_t)i][2];
             }
         } else if (anyN) {
-            Attribute* N = mesh.addVertexAttrib("N", Type::Normal, 3);
+            Attribute<T>* N = mesh.addVertexAttrib("N", Type::Normal, 3);
             for (size_t fi = 0; fi < faces.size(); ++fi) {
                 const Face& face = faces[fi];
                 for (size_t k = 0; k < face.vn.size(); ++k) {
                     int dst = io::mapIndex(vertMap, recs[fi].fileVert0 + (int)k);
                     int src = face.vn[k];
                     if (dst < 0 || src < 0 || src >= (int)nrm.size()) continue;
-                    N->floatAt(dst)[0] = (float)nrm[(size_t)src][0];
-                    N->floatAt(dst)[1] = (float)nrm[(size_t)src][1];
-                    N->floatAt(dst)[2] = (float)nrm[(size_t)src][2];
+                    N->floatAt(dst)[0] = (T)nrm[(size_t)src][0];
+                    N->floatAt(dst)[1] = (T)nrm[(size_t)src][1];
+                    N->floatAt(dst)[2] = (T)nrm[(size_t)src][2];
                 }
             }
         }
         if (anyUv && pointUv) {
-            Attribute* tex = mesh.addPointAttrib("uv", Type::Float, uvWidth);
+            Attribute<T>* tex = mesh.addPointAttrib("uv", Type::Float, uvWidth);
             for (int i = 0; i < mesh.pointCount() && i < (int)(uv.size() / 3); ++i) {
-                tex->floatAt(i)[0] = (float)uv[(size_t)i * 3 + 0];
-                tex->floatAt(i)[1] = (float)uv[(size_t)i * 3 + 1];
-                if (uvWidth > 2) tex->floatAt(i)[2] = (float)uv[(size_t)i * 3 + 2];
+                tex->floatAt(i)[0] = (T)uv[(size_t)i * 3 + 0];
+                tex->floatAt(i)[1] = (T)uv[(size_t)i * 3 + 1];
+                if (uvWidth > 2) tex->floatAt(i)[2] = (T)uv[(size_t)i * 3 + 2];
             }
         } else if (anyUv) {
-            Attribute* tex = mesh.addVertexAttrib("uv", Type::Float, uvWidth);
+            Attribute<T>* tex = mesh.addVertexAttrib("uv", Type::Float, uvWidth);
             for (size_t fi = 0; fi < faces.size(); ++fi) {
                 const Face& face = faces[fi];
                 for (size_t k = 0; k < face.vt.size(); ++k) {
                     int dst = io::mapIndex(vertMap, recs[fi].fileVert0 + (int)k);
                     int src = face.vt[k];
                     if (dst < 0 || src < 0 || src >= (int)(uv.size() / 3)) continue;
-                    tex->floatAt(dst)[0] = (float)uv[(size_t)src * 3 + 0];
-                    tex->floatAt(dst)[1] = (float)uv[(size_t)src * 3 + 1];
-                    if (uvWidth > 2) tex->floatAt(dst)[2] = (float)uv[(size_t)src * 3 + 2];
+                    tex->floatAt(dst)[0] = (T)uv[(size_t)src * 3 + 0];
+                    tex->floatAt(dst)[1] = (T)uv[(size_t)src * 3 + 1];
+                    if (uvWidth > 2) tex->floatAt(dst)[2] = (T)uv[(size_t)src * 3 + 2];
                 }
             }
         }
@@ -1370,40 +1375,40 @@ int writeObj(const ntmesh<T, Attr>& mesh, const char* path) {
         std::fprintf(fp, "v %.9g %.9g %.9g\n",
                      (double)mesh.points[i][0], (double)mesh.points[i][1], (double)mesh.points[i][2]);
     }
-    const Attribute* pointN = nullptr;
-    const Attribute* vertN = nullptr;
-    const Attribute* pointUv = nullptr;
-    const Attribute* vertUv = nullptr;
+    const Attribute<T>* pointN = nullptr;
+    const Attribute<T>* vertN = nullptr;
+    const Attribute<T>* pointUv = nullptr;
+    const Attribute<T>* vertUv = nullptr;
     if constexpr (IoTraits<T, Attr>::numeric) {
-        const Attribute* vn = mesh.findVertexAttrib("N");
+        const Attribute<T>* vn = mesh.findVertexAttrib("N");
         if (vn && vn->kind == Type::Normal && vn->tupleSize >= 3 && vn->count >= mesh.vertexCount() && vn->data)
             vertN = vn;
-        const Attribute* pn = mesh.findPointAttrib("N");
+        const Attribute<T>* pn = mesh.findPointAttrib("N");
         if (!vertN && pn && pn->kind == Type::Normal && pn->tupleSize >= 3 && pn->count >= mesh.pointCount() && pn->data)
             pointN = pn;
-        const Attribute* vu = mesh.findVertexAttrib("uv");
+        const Attribute<T>* vu = mesh.findVertexAttrib("uv");
         if (vu && vu->kind != Type::Int && vu->tupleSize >= 2 && vu->count >= mesh.vertexCount() && vu->data)
             vertUv = vu;
-        const Attribute* pu = mesh.findPointAttrib("uv");
+        const Attribute<T>* pu = mesh.findPointAttrib("uv");
         if (!vertUv && pu && pu->kind != Type::Int && pu->tupleSize >= 2 && pu->count >= mesh.pointCount() && pu->data)
             pointUv = pu;
     }
     if (vertN) {
         for (int i = 0; i < mesh.vertexCount(); ++i) {
-            const float* s = vertN->floatAt(i);
+            const T* s = vertN->floatAt(i);
             std::fprintf(fp, "vn %.9g %.9g %.9g\n", (double)s[0], (double)s[1], (double)s[2]);
         }
     } else if (pointN) {
         for (int i = 0; i < mesh.pointCount(); ++i) {
-            const float* s = pointN->floatAt(i);
+            const T* s = pointN->floatAt(i);
             std::fprintf(fp, "vn %.9g %.9g %.9g\n", (double)s[0], (double)s[1], (double)s[2]);
         }
     }
-    const Attribute* uvCol = vertUv ? vertUv : pointUv;
+    const Attribute<T>* uvCol = vertUv ? vertUv : pointUv;
     int uvN = vertUv ? mesh.vertexCount() : mesh.pointCount();
     if (uvCol) {
         for (int i = 0; i < uvN; ++i) {
-            const float* s = uvCol->floatAt(i);
+            const T* s = uvCol->floatAt(i);
             if (uvCol->tupleSize >= 3)
                 std::fprintf(fp, "vt %.9g %.9g %.9g\n", (double)s[0], (double)s[1], (double)s[2]);
             else

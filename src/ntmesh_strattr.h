@@ -1,6 +1,6 @@
 // Host-only string attributes for ntmesh.
 // Each value is an index into a pool of std::string, so repeated strings are stored once.
-// ntmesh<T, WithStrAttribs> is not trivially copyable and is not uploaded.
+// ntmesh<T, WithStrAttribs<T>> is not trivially copyable and is not uploaded.
 // copyTopo dumps points and topology. copyNumeric dumps those plus the numeric columns.
 
 
@@ -138,8 +138,9 @@ inline void printStringSet(const char* domain, const StringSet& s) {
         std::printf("  %s %s string count %d\n", domain, s.data[i].name, s.data[i].indices.count);
 }
 
-// Numeric attributes plus a string pool. Use ntmesh<T, WithStrAttribs>.
-struct WithStrAttribs : WithAttribs {
+// Numeric attributes plus a string pool. Use ntmesh<T, WithStrAttribs<T>>.
+template <typename T>
+struct WithStrAttribs : WithAttribs<T> {
     StringSet                pointStrings;
     StringSet                vertexStrings;
     StringSet                primStrings;
@@ -155,9 +156,9 @@ struct WithStrAttribs : WithAttribs {
     const StringAttribute* findFaceString(const char* name) const { return primStrings.find(name); }
     const StringAttribute* findMeshString(const char* name) const { return meshStrings.find(name); }
 
-    StringAttribute* addPointString(const char* name) { return addString(pointStrings, name, pointN); }
-    StringAttribute* addVertexString(const char* name) { return addString(vertexStrings, name, vertN); }
-    StringAttribute* addFaceString(const char* name) { return addString(primStrings, name, primN); }
+    StringAttribute* addPointString(const char* name) { return addString(pointStrings, name, this->pointN); }
+    StringAttribute* addVertexString(const char* name) { return addString(vertexStrings, name, this->vertN); }
+    StringAttribute* addFaceString(const char* name) { return addString(primStrings, name, this->primN); }
     StringAttribute* addMeshString(const char* name) { return addString(meshStrings, name, 1); }
 
     int intern(const char* s) {
@@ -180,27 +181,27 @@ struct WithStrAttribs : WithAttribs {
     }
 
     void attrReserve(int npoints, int nverts, int nprims) {
-        WithAttribs::attrReserve(npoints, nverts, nprims);
+        WithAttribs<T>::attrReserve(npoints, nverts, nprims);
         reserveStringSet(pointStrings, npoints);
         reserveStringSet(vertexStrings, nverts);
         reserveStringSet(primStrings, nprims);
         reserveStringSet(meshStrings, 1);
     }
-    void attrFitPoints(int n) { WithAttribs::attrFitPoints(n); fitStringSet(pointStrings, n); }
-    void attrFitVerts(int n) { WithAttribs::attrFitVerts(n); fitStringSet(vertexStrings, n); }
-    void attrFitPrims(int n) { WithAttribs::attrFitPrims(n); fitStringSet(primStrings, n); }
-    void attrFitDetail() { WithAttribs::attrFitDetail(); fitStringSet(meshStrings, 1); }
-    void attrInsertVerts(int at, int n) { WithAttribs::attrInsertVerts(at, n); insertStringSet(vertexStrings, at, n); }
-    void attrInsertPrims(int at, int n) { WithAttribs::attrInsertPrims(at, n); insertStringSet(primStrings, at, n); }
-    void attrEraseVerts(int at, int n) { WithAttribs::attrEraseVerts(at, n); eraseStringSet(vertexStrings, at, n); }
-    void attrErasePrims(int at, int n) { WithAttribs::attrErasePrims(at, n); eraseStringSet(primStrings, at, n); }
-    void attrCopyPoint(int dst, int src) { WithAttribs::attrCopyPoint(dst, src); copyStringElem(pointStrings, dst, src); }
-    void attrCopyVert(int dst, int src) { WithAttribs::attrCopyVert(dst, src); copyStringElem(vertexStrings, dst, src); }
-    void attrCopyPrim(int dst, int src) { WithAttribs::attrCopyPrim(dst, src); copyStringElem(primStrings, dst, src); }
-    void attrSwapVert(int a, int b) { WithAttribs::attrSwapVert(a, b); swapStringElem(vertexStrings, a, b); }
+    void attrFitPoints(int n) { WithAttribs<T>::attrFitPoints(n); fitStringSet(pointStrings, n); }
+    void attrFitVerts(int n) { WithAttribs<T>::attrFitVerts(n); fitStringSet(vertexStrings, n); }
+    void attrFitPrims(int n) { WithAttribs<T>::attrFitPrims(n); fitStringSet(primStrings, n); }
+    void attrFitDetail() { WithAttribs<T>::attrFitDetail(); fitStringSet(meshStrings, 1); }
+    void attrInsertVerts(int at, int n) { WithAttribs<T>::attrInsertVerts(at, n); insertStringSet(vertexStrings, at, n); }
+    void attrInsertPrims(int at, int n) { WithAttribs<T>::attrInsertPrims(at, n); insertStringSet(primStrings, at, n); }
+    void attrEraseVerts(int at, int n) { WithAttribs<T>::attrEraseVerts(at, n); eraseStringSet(vertexStrings, at, n); }
+    void attrErasePrims(int at, int n) { WithAttribs<T>::attrErasePrims(at, n); eraseStringSet(primStrings, at, n); }
+    void attrCopyPoint(int dst, int src) { WithAttribs<T>::attrCopyPoint(dst, src); copyStringElem(pointStrings, dst, src); }
+    void attrCopyVert(int dst, int src) { WithAttribs<T>::attrCopyVert(dst, src); copyStringElem(vertexStrings, dst, src); }
+    void attrCopyPrim(int dst, int src) { WithAttribs<T>::attrCopyPrim(dst, src); copyStringElem(primStrings, dst, src); }
+    void attrSwapVert(int a, int b) { WithAttribs<T>::attrSwapVert(a, b); swapStringElem(vertexStrings, a, b); }
 
     void attrMergePoints(const WithStrAttribs& src, int oldN, int newN) {
-        WithAttribs::attrMergePoints(src, oldN, newN);
+        WithAttribs<T>::attrMergePoints(src, oldN, newN);
         fitStringSet(pointStrings, newN);
         for (int i = 0; i < src.pointStrings.count; ++i) {
             const StringAttribute& s = src.pointStrings.data[i];
@@ -215,7 +216,7 @@ struct WithStrAttribs : WithAttribs {
         }
     }
     void attrMergeVerts(const WithStrAttribs& src, int oldN, int dstAt, int srcAt, int n) {
-        WithAttribs::attrMergeVerts(src, oldN, dstAt, srcAt, n);
+        WithAttribs<T>::attrMergeVerts(src, oldN, dstAt, srcAt, n);
         if (n <= 0) return;
         insertStringSet(vertexStrings, dstAt, n);
         int newN = oldN + n;
@@ -231,7 +232,7 @@ struct WithStrAttribs : WithAttribs {
         }
     }
     void attrMergePrims(const WithStrAttribs& src, int oldN, int dstAt, int srcAt, int n) {
-        WithAttribs::attrMergePrims(src, oldN, dstAt, srcAt, n);
+        WithAttribs<T>::attrMergePrims(src, oldN, dstAt, srcAt, n);
         if (n <= 0) return;
         insertStringSet(primStrings, dstAt, n);
         int newN = oldN + n;
@@ -247,7 +248,7 @@ struct WithStrAttribs : WithAttribs {
         }
     }
     void attrMergeDetail(const WithStrAttribs& src) {
-        WithAttribs::attrMergeDetail(src);
+        WithAttribs<T>::attrMergeDetail(src);
         for (int i = 0; i < src.meshStrings.count; ++i) {
             const StringAttribute& s = src.meshStrings.data[i];
             if (meshStrings.find(s.name)) continue;
@@ -257,7 +258,7 @@ struct WithStrAttribs : WithAttribs {
         }
     }
     void attrClear() {
-        WithAttribs::attrClear();
+        WithAttribs<T>::attrClear();
         freeStringSet(pointStrings);
         freeStringSet(vertexStrings);
         freeStringSet(primStrings);
@@ -265,7 +266,7 @@ struct WithStrAttribs : WithAttribs {
         pool.clear();
     }
     void attrClone(const WithStrAttribs& src) {
-        WithAttribs::attrClone(src);
+        WithAttribs<T>::attrClone(src);
         pool = src.pool;
         cloneStringSet(pointStrings, src.pointStrings);
         cloneStringSet(vertexStrings, src.vertexStrings);
@@ -273,7 +274,7 @@ struct WithStrAttribs : WithAttribs {
         cloneStringSet(meshStrings, src.meshStrings);
     }
     void attrPrint() const {
-        WithAttribs::attrPrint();
+        WithAttribs<T>::attrPrint();
         printStringSet("point", pointStrings);
         printStringSet("vertex", vertexStrings);
         printStringSet("prim", primStrings);
@@ -282,9 +283,10 @@ struct WithStrAttribs : WithAttribs {
 };
 
 // Copy topology and numeric columns from a string mesh. The string pool stays behind.
+// Numeric columns convert when the scalars differ. Int columns are copied as int.
 template <typename Dst, typename Src>
-void copyNumeric(ntmesh<Dst, WithAttribs>& dst, const ntmesh<Src, WithStrAttribs>& src) {
-    ntmesh<Dst, WithAttribs> out;
+void copyNumeric(ntmesh<Dst, WithAttribs<Dst>>& dst, const ntmesh<Src, WithStrAttribs<Src>>& src) {
+    ntmesh<Dst, WithAttribs<Dst>> out;
     bufFit(out.points, src.pointCount());
     for (int i = 0; i < src.pointCount(); ++i) {
         const ntv::nvec3<Src>& p = src.points[i];
@@ -296,12 +298,56 @@ void copyNumeric(ntmesh<Dst, WithAttribs>& dst, const ntmesh<Src, WithStrAttribs
     bufClone(out.ngonOffsets, src.ngonOffsets);
     bufClone(out.lineIndices, src.lineIndices);
     bufClone(out.lineOffsets, src.lineOffsets);
-    static_cast<WithAttribs&>(out).attrClone(src);
+    if constexpr (std::is_same<Dst, Src>::value) {
+        static_cast<WithAttribs<Dst>&>(out).attrClone(src);
+    } else {
+        detail::setConvert(out.pointAttribs, src.pointAttribs);
+        detail::setConvert(out.vertexAttribs, src.vertexAttribs);
+        detail::setConvert(out.primAttribs, src.primAttribs);
+        detail::setConvert(out.meshAttribs, src.meshAttribs);
+        out.pointN = src.pointN;
+        out.vertN = src.vertN;
+        out.primN = src.primN;
+    }
 
     dst.clear();
     dst.takeTopology(out);
-    static_cast<WithAttribs&>(dst) = static_cast<WithAttribs&>(out);
-    static_cast<WithAttribs&>(out) = WithAttribs{};
+    static_cast<WithAttribs<Dst>&>(dst) = static_cast<WithAttribs<Dst>&>(out);
+    static_cast<WithAttribs<Dst>&>(out) = WithAttribs<Dst>{};
+}
+
+// Deep copy across scalars, including the string pool. Numeric columns convert from Src to Dst.
+template <typename Dst, typename Src, typename = std::enable_if_t<!std::is_same<Dst, Src>::value>>
+void copyMesh(ntmesh<Dst, WithStrAttribs<Dst>>& dst, const ntmesh<Src, WithStrAttribs<Src>>& src) {
+    ntmesh<Dst, WithStrAttribs<Dst>> out;
+    bufFit(out.points, src.pointCount());
+    for (int i = 0; i < src.pointCount(); ++i) {
+        const ntv::nvec3<Src>& p = src.points[i];
+        out.points[i] = ntv::nvec3<Dst>((Dst)p[0], (Dst)p[1], (Dst)p[2]);
+    }
+    bufClone(out.triangleIndices, src.triangleIndices);
+    bufClone(out.quadIndices, src.quadIndices);
+    bufClone(out.ngonIndices, src.ngonIndices);
+    bufClone(out.ngonOffsets, src.ngonOffsets);
+    bufClone(out.lineIndices, src.lineIndices);
+    bufClone(out.lineOffsets, src.lineOffsets);
+    detail::setConvert(out.pointAttribs, src.pointAttribs);
+    detail::setConvert(out.vertexAttribs, src.vertexAttribs);
+    detail::setConvert(out.primAttribs, src.primAttribs);
+    detail::setConvert(out.meshAttribs, src.meshAttribs);
+    out.pointN = src.pointN;
+    out.vertN = src.vertN;
+    out.primN = src.primN;
+    out.pool = src.pool;
+    cloneStringSet(out.pointStrings, src.pointStrings);
+    cloneStringSet(out.vertexStrings, src.vertexStrings);
+    cloneStringSet(out.primStrings, src.primStrings);
+    cloneStringSet(out.meshStrings, src.meshStrings);
+
+    dst.clear();
+    dst.takeTopology(out);
+    static_cast<WithStrAttribs<Dst>&>(dst) = static_cast<WithStrAttribs<Dst>&>(out);
+    static_cast<WithStrAttribs<Dst>&>(out) = WithStrAttribs<Dst>{};
 }
 
 } // namespace ntm

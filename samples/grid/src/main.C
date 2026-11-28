@@ -17,10 +17,10 @@ struct Rng {
     }
 };
 
-bool columnsPresent(const ntm::ntmesh<float, ntm::WithAttribs>& mesh) {
-    const ntm::Attribute* N = mesh.findPointAttrib("N");
-    const ntm::Attribute* uv = mesh.findVertexAttrib("uv");
-    const ntm::Attribute* Cd = mesh.findFaceAttrib("Cd");
+bool columnsPresent(const ntm::ntmesh<float, ntm::WithAttribs<float>>& mesh) {
+    const ntm::Attribute<float>* N = mesh.findPointAttrib("N");
+    const ntm::Attribute<float>* uv = mesh.findVertexAttrib("uv");
+    const ntm::Attribute<float>* Cd = mesh.findFaceAttrib("Cd");
     if (!N || N->kind != ntm::Type::Normal || N->tupleSize < 3) return false;
     if (!uv || uv->isInt() || uv->tupleSize < 2) return false;
     if (!Cd || Cd->kind != ntm::Type::Color || Cd->tupleSize < 3) return false;
@@ -81,7 +81,7 @@ int main() {
         std::fprintf(stderr, "could not read %s\n", BUNNY_GEO);
         return 1;
     }
-    ntm::ntmesh<float, ntm::WithAttribs> attrib;
+    ntm::ntmesh<float, ntm::WithAttribs<float>> attrib;
     if (!ntm::readFile(attrib, BUNNY_GEO)) {
         std::fprintf(stderr, "could not read %s\n", BUNNY_GEO);
         plain.clear();

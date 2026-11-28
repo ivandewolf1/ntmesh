@@ -1,7 +1,9 @@
 # ntmesh
 nano templated polygonal mesh
 
-Header-only polygonal mesh of points, triangles, quads, n-gons, and open polylines. Templated on the position type, so the same calls build an `ntmesh<float>` or an `ntmesh<double>`. The data structures are CUDA-friendly. Written for utility: little error checking, users are expected to feed it good data. This is intended to be terse, but reasonably feature-rich. Unlike the ntvec library, it should be legible but terse.
+ntmesh is built using the [ntv](https://github.com/ivandewolf1/ntv) library (a CUDA-friendly header-only vector and matrix library).
+
+Header-only polygonal mesh of points, triangles, quads, n-gons, and open polylines. Templated on the position type, so the same calls build an `ntmesh<float>` or an `ntmesh<double>`. The data structures are CUDA-friendly. Written for utility: little error checking, users are expected to feed it good data. This is intended to be terse, but reasonably feature-rich. Unlike the [ntv](https://github.com/ivandewolf1/ntv) library, it should be legible but terse.
 
 The purpose of this is to make a polygonal mesh data structure that is useful for geometry processing algortihms. Triangles, quads, ngons, and polylines are kept in separate lists, but optionally ngons can store everything. 
 
@@ -33,8 +35,8 @@ Topology is the whole of `ntmesh.h`. Numeric attributes, string attributes, and 
 | Include | Mesh type | What you get |
 |---------|-----------|----------------|
 | [`ntmesh.h`](docs/ntmesh.md) | `ntm::ntmesh<T>` | simple polygonal mesh topology |
-| [`ntmesh_attribs.h`](docs/ntmesh_attribs.md) | `ntm::ntmesh<T, ntm::WithAttribs>` | point/prim/vert/mesh attributes of type float or int and varying dimension |
-| [`ntmesh_strattr.h`](docs/ntmesh_strattr.md) | `ntm::ntmesh<T, ntm::WithStrAttribs>` | point/prim/vert/mesh string attribs, unavailable on GPU |
+| [`ntmesh_attribs.h`](docs/ntmesh_attribs.md) | `ntm::ntmesh<T, ntm::WithAttribs<T>>` | point/prim/vert/mesh attributes of type T or int and varying dimension |
+| [`ntmesh_strattr.h`](docs/ntmesh_strattr.md) | `ntm::ntmesh<T, ntm::WithStrAttribs<T>>` | point/prim/vert/mesh string attribs, unavailable on GPU |
 | [`ntmesh_file.h`](docs/ntmesh_file.md) | any of the three | ASCII `.obj` and `.geo` read/write |
 
 `ntmesh.h` needs `nvec3.h` and `nmat4.h` from ntv on the include path. The attribute headers pull in the mesh header. A translation unit that only needs topology includes `ntmesh.h` and nothing else.
@@ -77,7 +79,7 @@ mesh.primVertex(f, k);       // corner k of prim f, across all four lists
 
 `reserve(npoints, nverts, nprims)` grows capacity and leaves the live counts alone. `addPoint` / `addFace` / `addLine` append. `trim(npoints, ntris, nquads, nngons, nlines)` sets the live size and keeps the spare capacity. `merge` appends another mesh of the same type and rebases its corner indices by the destination point count.
 
-Arrays live in `Buf<T>`: a pointer, a count, and a capacity. The mesh has no destructor, so call `clear()` when you are done with it. A plain copy shares those pointers. `copyMesh` allocates new buffers, and it can narrow positions from `double` to `float` when both meshes use the same attribute policy.
+Arrays live in `Buf<T>`: a pointer, a count, and a capacity. The mesh has no destructor, so call `clear()` when you are done with it. A plain copy shares those pointers. `copyMesh` allocates new buffers. It converts positions from the source scalar to the destination scalar, and when the policies are `WithAttribs` of those scalars it converts the numeric columns the same way. `Int` columns are copied as `int`.
 
 ```cpp
 ntm::ntmesh<double> cpu;
@@ -89,13 +91,13 @@ ntm::copyMesh(gpu, cpu);
 
 ## Attributes
 
-Include `ntmesh_attribs.h` and use `ntmesh<T, WithAttribs>`. Columns can sit on points, vertices, prims, or the mesh. A mesh column is a single value. On merge, the destination keeps its value when both meshes have that name.
+Include `ntmesh_attribs.h` and use `ntmesh<T, WithAttribs<T>>`. Columns can sit on points, vertices, prims, or the mesh. A mesh column is a single value. On merge, the destination keeps its value when both meshes have that name.
 
 ```cpp
 #include "ntmesh_attribs.h"
 
-ntm::ntmesh<float, ntm::WithAttribs> mesh;
-ntm::Attribute* N = mesh.addPointAttrib("N", ntm::Type::Normal, 3);
+ntm::ntmesh<float, ntm::WithAttribs<float>> mesh;
+ntm::Attribute<float>* N = mesh.addPointAttrib("N", ntm::Type::Normal, 3);
 N->floatAt(0)[1] = 1.f;
 ```
 
@@ -104,10 +106,10 @@ N->floatAt(0)[1] = 1.f;
 | Kind | Storage | `transform(nmat4)` |
 |------|---------|--------------------|
 | `Int` | `int` | left alone |
-| `Float` | `float` | left alone |
-| `Position` | `float` | full matrix, including translation |
-| `Normal` | `float` | inverse transpose of the upper 3×3, then renormalized |
-| `Color` | `float` | left alone |
+| `Float` | `T` | left alone |
+| `Position` | `T` | full matrix, including translation |
+| `Normal` | `T` | inverse transpose of the upper 3×3, then renormalized |
+| `Color` | `T` | left alone |
 
 `Position` and `Normal` use the first three components. A shorter tuple is skipped, and any components past the third stay put. A zero-length normal stays zero. The point buffer itself always takes the full matrix, on a plain mesh as well as an attributed one.
 
@@ -115,26 +117,28 @@ N->floatAt(0)[1] = 1.f;
 
 ## Strings, host only
 
-Include `ntmesh_strattr.h` and use `ntmesh<T, WithStrAttribs>`. That type has the numeric columns plus string columns on points, vertices, prims, and the mesh. Each value is an index into one `std::vector<std::string>` pool, so a repeated string is stored once. Index 0 is the empty string.
+Include `ntmesh_strattr.h` and use `ntmesh<T, WithStrAttribs<T>>`. That type has the numeric columns plus string columns on points, vertices, prims, and the mesh. Each value is an index into one `std::vector<std::string>` pool, so a repeated string is stored once. Index 0 is the empty string.
 
 ```cpp
-ntm::ntmesh<float, ntm::WithStrAttribs> mesh;
+ntm::ntmesh<float, ntm::WithStrAttribs<float>> mesh;
 mesh.addPoint(ntv::nvec3<float>(0, 0, 0));
 mesh.setString(*mesh.addPointString("mat"), 0, "oak");
 ```
 
 This mesh is for the host. It is not trivially copyable, and it is not the object you upload. Dump a device mesh out of it:
 
-- `copyTopo` copies points and the four prim lists into an `ntmesh<T>` or an `ntmesh<T, WithAttribs>`.
-- `copyNumeric` copies those plus the numeric columns into an `ntmesh<T, WithAttribs>`, and leaves the string pool behind.
+- `copyTopo` copies points and the four prim lists into an `ntmesh<T>` or an `ntmesh<T, WithAttribs<T>>`.
+- `copyNumeric` copies those plus the numeric columns into an `ntmesh<T, WithAttribs<T>>`, and leaves the string pool behind. The numeric columns convert when the scalars differ.
 
 Both allocate new buffers. Freeing the string mesh does not free the dump.
 
 ## Files
 
-`ntmesh_file.h` reads and writes ASCII Wavefront `.obj` and ASCII Houdini `.geo`. `readFile` and `writeFile` pick the format from the suffix. This header is host-only. A device file does not include it.
+`ntmesh_file.h` reads and writes ASCII Wavefront `.obj` and ASCII [Houdini](https://www.sidefx.com/products/houdini/) `.geo`. `readFile` and `writeFile` pick the format from the suffix. This header is host-only. A device file does not include it.
 
-`.obj` stores points, faces, and `l` lines. On an attributed mesh, a point or vertex `N` is written as `vn`, and `uv` as `vt`. `.geo` is the text JSON geometry document: polygon runs, the point buffer as `P`, and numeric columns on every domain. String columns are written only for `WithStrAttribs`. A plain `ntmesh<T>` still reads the points and the faces from either format. An open polyline is written as a `PolygonCurve_run`, and read back as a line. `readFile(mesh, path, separate)` uses the same filing rule as `addFace`. The default keeps 3-corner faces as triangles and 4-corner faces as quads. Pass `false` to put every closed face on the n-gon list, in file order.
+Houdini is a registered trademark of Side Effects Software Inc.
+
+`.obj` stores points, faces, and `l` lines. On an attributed mesh, a point or vertex `N` is written as `vn`, and `uv` as `vt`. `.geo` is the text JSON geometry document: polygon runs, the point buffer as `P`, and numeric columns on every domain. String columns are written only for `WithStrAttribs<T>`. Numeric columns are `fpreal64` when `T` is `double` and `fpreal32` otherwise, the same rule as `P`. A plain `ntmesh<T>` still reads the points and the faces from either format. An open polyline is written as a `PolygonCurve_run`, and read back as a line. `readFile(mesh, path, separate)` uses the same filing rule as `addFace`. The default keeps 3-corner faces as triangles and 4-corner faces as quads. Pass `false` to put every closed face on the n-gon list, in file order.
 
 ```cpp
 #include "ntmesh_file.h"
@@ -154,7 +158,7 @@ The topology mesh and the numeric-attribute mesh are trivially copyable. The byt
 
 Left undefined, `NTL_HD` is empty and the headers stay host-only. Accessors are marked with it. Allocation, `merge`, `trim`, and `transform` stay on the host.
 
-After uploading, rewrite every pointer in the copy to its device address: the `Buf` data pointers, and, for `WithAttribs`, each attribute's `data` pointer and the attribute-set pointer. Do not upload an `ntmesh<T, WithStrAttribs>`.
+After uploading, rewrite every pointer in the copy to its device address: the `Buf` data pointers, and, for `WithAttribs<T>`, each attribute's `data` pointer and the attribute-set pointer. Do not upload an `ntmesh<T, WithStrAttribs<T>>`.
 
 ## Tests
 

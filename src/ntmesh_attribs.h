@@ -1,11 +1,13 @@
 // Numeric attributes for ntmesh.
-// Point, vertex, prim, and mesh columns of int or float.
+// Point, vertex, prim, and mesh columns of int or T.
 // The mesh stays trivially copyable: upload the bytes, then rewrite the pointers.
 // String attributes live in ntmesh_strattr.h and are host-only.
+// This part of the library was largely AI generated. 
 
 
 #pragma once
 #include "ntmesh.h"
+#include <type_traits>
 
 namespace ntm {
 
@@ -13,12 +15,13 @@ namespace ntm {
 enum class Type {
     Int,
     Float,
-    Position, // float tuple, takes the full matrix including translation
+    Position, // tuple of T, takes the full matrix including translation
     Normal,  // when we transform a mesh, the normals should only rottate, and maintain unit length.
     Color    // when we transform a mesh, the color should not be affected.
 };
 
-// An attribute is a named column of int or float values.
+// An attribute is a named column of int or T values.
+template <typename T>
 struct Attribute {
     char  name[32];
     Type  kind;
@@ -28,8 +31,8 @@ struct Attribute {
     void* data;
 
     NTL_HD int isInt() const { return kind == Type::Int; }
-    NTL_HD float* floatAt(int i) { return (float*)data + i * tupleSize; }
-    NTL_HD const float* floatAt(int i) const { return (const float*)data + i * tupleSize; }
+    NTL_HD T* floatAt(int i) { return (T*)data + i * tupleSize; }
+    NTL_HD const T* floatAt(int i) const { return (const T*)data + i * tupleSize; }
     NTL_HD int* intAt(int i) { return (int*)data + i * tupleSize; }
     NTL_HD const int* intAt(int i) const { return (const int*)data + i * tupleSize; }
 };
@@ -45,28 +48,30 @@ NTL_HD inline int nameEq(const char* a, const char* b) {
 }
 
 // A set of attributes, on points, prims, verts, or the mesh.
+template <typename T>
 struct AttributeSet {
-    Attribute* data = nullptr;
+    Attribute<T>* data = nullptr;
     int        count = 0;
     int        capacity = 0;
 
-    NTL_HD Attribute* find(const char* name) {
+    NTL_HD Attribute<T>* find(const char* name) {
         for (int i = 0; i < count; ++i)
             if (nameEq(data[i].name, name)) return &data[i];
         return nullptr;
     }
-    NTL_HD const Attribute* find(const char* name) const {
+    NTL_HD const Attribute<T>* find(const char* name) const {
         for (int i = 0; i < count; ++i)
             if (nameEq(data[i].name, name)) return &data[i];
         return nullptr;
     }
-    NTL_HD Attribute& operator[](int i) { return data[i]; }
-    NTL_HD const Attribute& operator[](int i) const { return data[i]; }
+    NTL_HD Attribute<T>& operator[](int i) { return data[i]; }
+    NTL_HD const Attribute<T>& operator[](int i) const { return data[i]; }
     NTL_HD int size() const { return count; }
 };
 
-inline int elemStride(const Attribute& a) {
-    int w = (a.kind == Type::Int) ? (int)sizeof(int) : (int)sizeof(float);
+template <typename T>
+inline int elemStride(const Attribute<T>& a) {
+    int w = (a.kind == Type::Int) ? (int)sizeof(int) : (int)sizeof(T);
     return w * a.tupleSize;
 }
 
@@ -78,7 +83,8 @@ inline void setName(char* dst, const char* name) {
     dst[i] = 0;
 }
 
-inline void attribReserve(Attribute& a, int cap) {
+template <typename T>
+inline void attribReserve(Attribute<T>& a, int cap) {
     if (cap <= a.capacity) return;
     void* grown = std::realloc(a.data, (size_t)elemStride(a) * (size_t)cap);
     if (!grown) return;
@@ -86,7 +92,8 @@ inline void attribReserve(Attribute& a, int cap) {
     a.capacity = cap;
 }
 
-inline void attribResize(Attribute& a, int n) {
+template <typename T>
+inline void attribResize(Attribute<T>& a, int n) {
     if (n < 0) n = 0;
     if (n > a.capacity) attribReserve(a, n);
     if (n > a.capacity) return;
@@ -96,20 +103,23 @@ inline void attribResize(Attribute& a, int n) {
     a.count = n;
 }
 
-inline void setReserve(AttributeSet& s, int cap) {
+template <typename T>
+inline void setReserve(AttributeSet<T>& s, int cap) {
     if (cap <= s.capacity) return;
-    Attribute* grown = static_cast<Attribute*>(std::realloc(s.data, sizeof(Attribute) * (size_t)cap));
+    Attribute<T>* grown = static_cast<Attribute<T>*>(std::realloc(s.data, sizeof(Attribute<T>) * (size_t)cap));
     if (!grown) return;
     s.data = grown;
     s.capacity = cap;
 }
 
-inline void fitSet(AttributeSet& s, int n) {
+template <typename T>
+inline void fitSet(AttributeSet<T>& s, int n) {
     for (int i = 0; i < s.count; ++i) attribResize(s.data[i], n);
 }
 
 // Insert n elements at index `at`, shifting the tail up. New elements are zero.
-inline void attribInsert(Attribute& a, int at, int n) {
+template <typename T>
+inline void attribInsert(Attribute<T>& a, int at, int n) {
     if (n <= 0) return;
     if (at < 0) at = 0;
     if (at > a.count) at = a.count;
@@ -125,12 +135,14 @@ inline void attribInsert(Attribute& a, int at, int n) {
     std::memset((char*)a.data + (size_t)stride * (size_t)at, 0, (size_t)stride * (size_t)n);
 }
 
-inline void insertSet(AttributeSet& s, int at, int n) {
+template <typename T>
+inline void insertSet(AttributeSet<T>& s, int at, int n) {
     for (int i = 0; i < s.count; ++i) attribInsert(s.data[i], at, n);
 }
 
 // Drop n elements starting at `at`.
-inline void attribErase(Attribute& a, int at, int n) {
+template <typename T>
+inline void attribErase(Attribute<T>& a, int at, int n) {
     if (n <= 0 || at >= a.count) return;
     if (at < 0) at = 0;
     if (at + n > a.count) n = a.count - at;
@@ -143,14 +155,16 @@ inline void attribErase(Attribute& a, int at, int n) {
     a.count -= n;
 }
 
-inline void eraseSet(AttributeSet& s, int at, int n) {
+template <typename T>
+inline void eraseSet(AttributeSet<T>& s, int at, int n) {
     for (int i = 0; i < s.count; ++i) attribErase(s.data[i], at, n);
 }
 
-inline void swapAttribElem(AttributeSet& s, int a, int b) {
+template <typename T>
+inline void swapAttribElem(AttributeSet<T>& s, int a, int b) {
     if (a == b) return;
     for (int i = 0; i < s.count; ++i) {
-        Attribute& col = s.data[i];
+        Attribute<T>& col = s.data[i];
         if (!col.data || a < 0 || b < 0 || a >= col.count || b >= col.count) continue;
         int stride = elemStride(col);
         if (stride <= 0) continue;
@@ -164,10 +178,11 @@ inline void swapAttribElem(AttributeSet& s, int a, int b) {
     }
 }
 
-inline void copyAttribElem(AttributeSet& s, int dst, int src) {
+template <typename T>
+inline void copyAttribElem(AttributeSet<T>& s, int dst, int src) {
     if (dst == src) return;
     for (int i = 0; i < s.count; ++i) {
-        Attribute& a = s.data[i];
+        Attribute<T>& a = s.data[i];
         if (!a.data || src < 0 || dst < 0 || src >= a.count || dst >= a.count) continue;
         int stride = elemStride(a);
         if (stride <= 0) continue;
@@ -177,15 +192,17 @@ inline void copyAttribElem(AttributeSet& s, int dst, int src) {
     }
 }
 
-inline void reserveSet(AttributeSet& s, int n) {
+template <typename T>
+inline void reserveSet(AttributeSet<T>& s, int n) {
     for (int i = 0; i < s.count; ++i) attribReserve(s.data[i], n);
 }
 
-inline Attribute* addAttrib(AttributeSet& s, const char* name, Type kind, int tupleSize, int domainCount) {
+template <typename T>
+inline Attribute<T>* addAttrib(AttributeSet<T>& s, const char* name, Type kind, int tupleSize, int domainCount) {
     if (tupleSize < 1) tupleSize = 1;
-    if (Attribute* existing = s.find(name)) return existing;
+    if (Attribute<T>* existing = s.find(name)) return existing;
     if (s.count == s.capacity) setReserve(s, s.capacity ? s.capacity * 2 : 4);
-    Attribute& a = s.data[s.count++];
+    Attribute<T>& a = s.data[s.count++];
     std::memset(&a, 0, sizeof(a));
     setName(a.name, name);
     a.kind = kind;
@@ -195,13 +212,14 @@ inline Attribute* addAttrib(AttributeSet& s, const char* name, Type kind, int tu
 }
 
 // Insert n elements at dstAt and copy n from srcAt into that hole.
-inline void mergeSetInsert(AttributeSet& dst, const AttributeSet& src, int oldN, int dstAt, int srcAt, int n) {
+template <typename T>
+inline void mergeSetInsert(AttributeSet<T>& dst, const AttributeSet<T>& src, int oldN, int dstAt, int srcAt, int n) {
     if (n <= 0) return;
     for (int i = 0; i < dst.count; ++i) attribInsert(dst.data[i], dstAt, n);
     int newN = oldN + n;
     for (int i = 0; i < src.count; ++i) {
-        const Attribute& s = src.data[i];
-        Attribute* d = dst.find(s.name);
+        const Attribute<T>& s = src.data[i];
+        Attribute<T>* d = dst.find(s.name);
         if (!d) d = addAttrib(dst, s.name, s.kind, s.tupleSize, newN);
         else if (d->kind != s.kind || d->tupleSize != s.tupleSize) continue;
         int ncopy = s.count - srcAt;
@@ -214,11 +232,12 @@ inline void mergeSetInsert(AttributeSet& dst, const AttributeSet& src, int oldN,
     }
 }
 
-inline void mergeSet(AttributeSet& dst, const AttributeSet& src, int oldN, int newN) {
+template <typename T>
+inline void mergeSet(AttributeSet<T>& dst, const AttributeSet<T>& src, int oldN, int newN) {
     fitSet(dst, newN);
     for (int i = 0; i < src.count; ++i) {
-        const Attribute& s = src.data[i];
-        Attribute* d = dst.find(s.name);
+        const Attribute<T>& s = src.data[i];
+        Attribute<T>* d = dst.find(s.name);
         if (!d) d = addAttrib(dst, s.name, s.kind, s.tupleSize, newN);
         else if (d->kind != s.kind || d->tupleSize != s.tupleSize) continue;
         else if (d->count != newN) attribResize(*d, newN);
@@ -232,10 +251,11 @@ inline void mergeSet(AttributeSet& dst, const AttributeSet& src, int oldN, int n
 }
 
 // One value for the whole mesh. The destination keeps its value when both have the name.
-inline void mergeDetail(AttributeSet& dst, const AttributeSet& src) {
+template <typename T>
+inline void mergeDetail(AttributeSet<T>& dst, const AttributeSet<T>& src) {
     for (int i = 0; i < src.count; ++i) {
-        const Attribute& s = src.data[i];
-        Attribute* d = dst.find(s.name);
+        const Attribute<T>& s = src.data[i];
+        Attribute<T>* d = dst.find(s.name);
         if (d) continue;
         d = addAttrib(dst, s.name, s.kind, s.tupleSize, 1);
         if (s.count > 0 && s.data && d->data)
@@ -243,7 +263,8 @@ inline void mergeDetail(AttributeSet& dst, const AttributeSet& src) {
     }
 }
 
-inline void freeSet(AttributeSet& s) {
+template <typename T>
+inline void freeSet(AttributeSet<T>& s) {
     for (int i = 0; i < s.count; ++i) std::free(s.data[i].data);
     std::free(s.data);
     s.data = nullptr;
@@ -251,14 +272,15 @@ inline void freeSet(AttributeSet& s) {
     s.capacity = 0;
 }
 
-inline void setClone(AttributeSet& dst, const AttributeSet& src) {
+template <typename T>
+inline void setClone(AttributeSet<T>& dst, const AttributeSet<T>& src) {
     freeSet(dst);
     if (src.count <= 0 || !src.data) return;
     setReserve(dst, src.count);
     dst.count = src.count;
     for (int i = 0; i < src.count; ++i) {
-        const Attribute& s = src.data[i];
-        Attribute& d = dst.data[i];
+        const Attribute<T>& s = src.data[i];
+        Attribute<T>& d = dst.data[i];
         std::memset(&d, 0, sizeof(d));
         setName(d.name, s.name);
         d.kind = s.kind;
@@ -281,9 +303,10 @@ inline const char* kindName(Type kind) {
     return "?";
 }
 
-inline void printSet(const char* domain, const AttributeSet& s) {
+template <typename T>
+inline void printSet(const char* domain, const AttributeSet<T>& s) {
     for (int i = 0; i < s.count; ++i) {
-        const Attribute& a = s.data[i];
+        const Attribute<T>& a = s.data[i];
         std::printf("  %s %s %s tuple %d count %d\n", domain, a.name, kindName(a.kind), a.tupleSize, a.count);
     }
 }
@@ -291,59 +314,60 @@ inline void printSet(const char* domain, const AttributeSet& s) {
 // Position columns take the affine matrix. Normals take the inverse-transpose 3x3
 // and are renormalized. Other kinds are left alone. A tuple shorter than 3 is skipped.
 template <typename T>
-void transformAttrib(Attribute& a, const ntv::nmat4<T>& m, const ntv::nmat3<T>& nmat) {
+void transformAttrib(Attribute<T>& a, const ntv::nmat4<T>& m, const ntv::nmat3<T>& nmat) {
     if (a.tupleSize < 3 || !a.data || a.count <= 0) return;
     if (a.kind != Type::Position && a.kind != Type::Normal) return;
     for (int i = 0; i < a.count; ++i) {
-        float* f = a.floatAt(i);
-        ntv::nvec3<T> v((T)f[0], (T)f[1], (T)f[2]);
+        T* f = a.floatAt(i);
+        ntv::nvec3<T> v(f[0], f[1], f[2]);
         if (a.kind == Type::Position) v = m * v;
         else {
             v = nmat * v;
             v.normalize();
         }
-        f[0] = (float)v[0];
-        f[1] = (float)v[1];
-        f[2] = (float)v[2];
+        f[0] = v[0];
+        f[1] = v[1];
+        f[2] = v[2];
     }
 }
 
 template <typename T>
-void transformSet(AttributeSet& s, const ntv::nmat4<T>& m, const ntv::nmat3<T>& nmat) {
+void transformSet(AttributeSet<T>& s, const ntv::nmat4<T>& m, const ntv::nmat3<T>& nmat) {
     for (int i = 0; i < s.count; ++i) transformAttrib(s.data[i], m, nmat);
 }
 
-// Numeric attribute policy. Use ntmesh<T, WithAttribs>.
+// Numeric attribute policy. Use ntmesh<T, WithAttribs<T>>.
 // pointN, vertN, and primN follow the mesh so a new column can be sized
 // without the policy seeing the point and index buffers.
+template <typename T>
 struct WithAttribs {
-    AttributeSet pointAttribs;
-    AttributeSet vertexAttribs;
-    AttributeSet primAttribs;
-    AttributeSet meshAttribs;
+    AttributeSet<T> pointAttribs;
+    AttributeSet<T> vertexAttribs;
+    AttributeSet<T> primAttribs;
+    AttributeSet<T> meshAttribs;
     int          pointN = 0;
     int          vertN = 0;
     int          primN = 0;
 
-    NTL_HD Attribute* findPointAttrib(const char* name) { return pointAttribs.find(name); }
-    NTL_HD Attribute* findVertexAttrib(const char* name) { return vertexAttribs.find(name); }
-    NTL_HD Attribute* findFaceAttrib(const char* name) { return primAttribs.find(name); }
-    NTL_HD Attribute* findMeshAttrib(const char* name) { return meshAttribs.find(name); }
-    NTL_HD const Attribute* findPointAttrib(const char* name) const { return pointAttribs.find(name); }
-    NTL_HD const Attribute* findVertexAttrib(const char* name) const { return vertexAttribs.find(name); }
-    NTL_HD const Attribute* findFaceAttrib(const char* name) const { return primAttribs.find(name); }
-    NTL_HD const Attribute* findMeshAttrib(const char* name) const { return meshAttribs.find(name); }
+    NTL_HD Attribute<T>* findPointAttrib(const char* name) { return pointAttribs.find(name); }
+    NTL_HD Attribute<T>* findVertexAttrib(const char* name) { return vertexAttribs.find(name); }
+    NTL_HD Attribute<T>* findFaceAttrib(const char* name) { return primAttribs.find(name); }
+    NTL_HD Attribute<T>* findMeshAttrib(const char* name) { return meshAttribs.find(name); }
+    NTL_HD const Attribute<T>* findPointAttrib(const char* name) const { return pointAttribs.find(name); }
+    NTL_HD const Attribute<T>* findVertexAttrib(const char* name) const { return vertexAttribs.find(name); }
+    NTL_HD const Attribute<T>* findFaceAttrib(const char* name) const { return primAttribs.find(name); }
+    NTL_HD const Attribute<T>* findMeshAttrib(const char* name) const { return meshAttribs.find(name); }
 
-    Attribute* addPointAttrib(const char* name, Type kind, int tupleSize) {
+    Attribute<T>* addPointAttrib(const char* name, Type kind, int tupleSize) {
         return addAttrib(pointAttribs, name, kind, tupleSize, pointN);
     }
-    Attribute* addVertexAttrib(const char* name, Type kind, int tupleSize) {
+    Attribute<T>* addVertexAttrib(const char* name, Type kind, int tupleSize) {
         return addAttrib(vertexAttribs, name, kind, tupleSize, vertN);
     }
-    Attribute* addFaceAttrib(const char* name, Type kind, int tupleSize) {
+    Attribute<T>* addFaceAttrib(const char* name, Type kind, int tupleSize) {
         return addAttrib(primAttribs, name, kind, tupleSize, primN);
     }
-    Attribute* addMeshAttrib(const char* name, Type kind, int tupleSize) {
+    Attribute<T>* addMeshAttrib(const char* name, Type kind, int tupleSize) {
         return addAttrib(meshAttribs, name, kind, tupleSize, 1);
     }
 
@@ -402,7 +426,6 @@ struct WithAttribs {
         printSet("prim", primAttribs);
         printSet("mesh", meshAttribs);
     }
-    template <typename T>
     void attrTransform(const ntv::nmat4<T>& m) {
         ntv::nmat3<T> nmat = m.asM3().inverse();
         nmat.transpose();
@@ -446,36 +469,37 @@ int faceUsesPoint(const ntmesh<T, Attr>& mesh, int f, int p) {
     return 0;
 }
 
-inline Attribute* normalColumn(AttributeSet& set, const char* name, int n) {
-    Attribute* col = addAttrib(set, name, Type::Normal, 3, n);
+template <typename T>
+inline Attribute<T>* normalColumn(AttributeSet<T>& set, const char* name, int n) {
+    Attribute<T>* col = addAttrib(set, name, Type::Normal, 3, n);
     if (!col || col->kind != Type::Normal || col->tupleSize < 3 || col->isInt()) return nullptr;
     attribResize(*col, n);
     if (n > 0 && !col->data) return nullptr;
     for (int i = 0; i < n; ++i) {
-        float* d = col->floatAt(i);
-        d[0] = 0.f;
-        d[1] = 0.f;
-        d[2] = 0.f;
+        T* d = col->floatAt(i);
+        d[0] = T(0);
+        d[1] = T(0);
+        d[2] = T(0);
     }
     return col;
 }
 
 template <typename T>
-void storeNormal(Attribute& col, int i, ntv::nvec3<T> n) {
+void storeNormal(Attribute<T>& col, int i, ntv::nvec3<T> n) {
     n.normalize();
-    float* d = col.floatAt(i);
-    d[0] = (float)n[0];
-    d[1] = (float)n[1];
-    d[2] = (float)n[2];
+    T* d = col.floatAt(i);
+    d[0] = n[0];
+    d[1] = n[1];
+    d[2] = n[2];
 }
 
 } // namespace detail
 
 // Unit face normal for every prim. A line is zero. The column is named "N".
 template <typename T, typename Attr>
-Attribute* computeFaceNormals(ntmesh<T, Attr>& mesh) {
+Attribute<T>* computeFaceNormals(ntmesh<T, Attr>& mesh) {
     int nf = mesh.primCount();
-    Attribute* col = detail::normalColumn(mesh.primAttribs, "N", nf);
+    Attribute<T>* col = detail::normalColumn(mesh.primAttribs, "N", nf);
     if (!col) return nullptr;
     for (int f = 0; f < nf; ++f) detail::storeNormal(*col, f, mesh.faceNormal(f));
     return col;
@@ -483,9 +507,9 @@ Attribute* computeFaceNormals(ntmesh<T, Attr>& mesh) {
 
 // Area-weighted point normal. Every face that uses the point is added. The column is named "N".
 template <typename T, typename Attr>
-Attribute* computePointNormals(ntmesh<T, Attr>& mesh) {
+Attribute<T>* computePointNormals(ntmesh<T, Attr>& mesh) {
     int np = mesh.pointCount();
-    Attribute* col = detail::normalColumn(mesh.pointAttribs, "N", np);
+    Attribute<T>* col = detail::normalColumn(mesh.pointAttribs, "N", np);
     if (!col) return nullptr;
     if (np <= 0) return col;
     ntv::nvec3<T>* acc = static_cast<ntv::nvec3<T>*>(std::malloc(sizeof(ntv::nvec3<T>) * (size_t)np));
@@ -512,9 +536,9 @@ Attribute* computePointNormals(ntmesh<T, Attr>& mesh) {
 
 // Area-weighted vertex normal. A face that shares the point is skipped when its normal is farther than cuspVal radians.
 template <typename T, typename Attr>
-Attribute* computeVertexNormals(ntmesh<T, Attr>& mesh, T cuspVal) {
+Attribute<T>* computeVertexNormals(ntmesh<T, Attr>& mesh, T cuspVal) {
     int nv = mesh.vertexCount();
-    Attribute* col = detail::normalColumn(mesh.vertexAttribs, "N", nv);
+    Attribute<T>* col = detail::normalColumn(mesh.vertexAttribs, "N", nv);
     if (!col) return nullptr;
     int nf = mesh.triangleCount() + mesh.quadCount() + mesh.ngonCount();
     if (nf <= 0 || nv <= 0) return col;
@@ -552,6 +576,70 @@ Attribute* computeVertexNormals(ntmesh<T, Attr>& mesh, T cuspVal) {
     }
     std::free(faces);
     return col;
+}
+
+namespace detail {
+
+// Copy one column set, casting each numeric component from Src to Dst. Int columns are copied as int.
+template <typename Dst, typename Src>
+void setConvert(AttributeSet<Dst>& dst, const AttributeSet<Src>& src) {
+    freeSet(dst);
+    if (src.count <= 0 || !src.data) return;
+    setReserve(dst, src.count);
+    dst.count = src.count;
+    for (int i = 0; i < src.count; ++i) {
+        const Attribute<Src>& s = src.data[i];
+        Attribute<Dst>& d = dst.data[i];
+        std::memset(&d, 0, sizeof(d));
+        setName(d.name, s.name);
+        d.kind = s.kind;
+        d.tupleSize = s.tupleSize;
+        if (s.count <= 0 || !s.data) continue;
+        attribResize(d, s.count);
+        if (!d.data) continue;
+        int w = s.tupleSize < 1 ? 1 : s.tupleSize;
+        if (s.kind == Type::Int) {
+            std::memcpy(d.data, s.data, sizeof(int) * (size_t)w * (size_t)s.count);
+        } else {
+            for (int e = 0; e < s.count; ++e) {
+                const Src* from = s.floatAt(e);
+                Dst* to = d.floatAt(e);
+                for (int c = 0; c < w; ++c) to[c] = (Dst)from[c];
+            }
+        }
+    }
+}
+
+} // namespace detail
+
+// Deep copy across scalars. Points and numeric columns convert from Src to Dst.
+// Int columns are copied as int. A same-scalar copy uses the other copyMesh.
+template <typename Dst, typename Src, typename = std::enable_if_t<!std::is_same<Dst, Src>::value>>
+void copyMesh(ntmesh<Dst, WithAttribs<Dst>>& dst, const ntmesh<Src, WithAttribs<Src>>& src) {
+    ntmesh<Dst, WithAttribs<Dst>> out;
+    bufFit(out.points, src.pointCount());
+    for (int i = 0; i < src.pointCount(); ++i) {
+        const ntv::nvec3<Src>& p = src.points[i];
+        out.points[i] = ntv::nvec3<Dst>((Dst)p[0], (Dst)p[1], (Dst)p[2]);
+    }
+    bufClone(out.triangleIndices, src.triangleIndices);
+    bufClone(out.quadIndices, src.quadIndices);
+    bufClone(out.ngonIndices, src.ngonIndices);
+    bufClone(out.ngonOffsets, src.ngonOffsets);
+    bufClone(out.lineIndices, src.lineIndices);
+    bufClone(out.lineOffsets, src.lineOffsets);
+    detail::setConvert(out.pointAttribs, src.pointAttribs);
+    detail::setConvert(out.vertexAttribs, src.vertexAttribs);
+    detail::setConvert(out.primAttribs, src.primAttribs);
+    detail::setConvert(out.meshAttribs, src.meshAttribs);
+    out.pointN = src.pointN;
+    out.vertN = src.vertN;
+    out.primN = src.primN;
+
+    dst.clear();
+    dst.takeTopology(out);
+    static_cast<WithAttribs<Dst>&>(dst) = static_cast<WithAttribs<Dst>&>(out);
+    static_cast<WithAttribs<Dst>&>(out) = WithAttribs<Dst>{};
 }
 
 } // namespace ntm

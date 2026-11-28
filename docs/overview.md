@@ -13,8 +13,8 @@ The mesh has no destructor. Call `clear()` when you are done with it. A plain co
 | Header | Mesh type | Role |
 |--------|-----------|------|
 | [`ntmesh.h`](ntmesh.md) | `ntm::ntmesh<T>` | Points and the four prim lists |
-| [`ntmesh_attribs.h`](ntmesh_attribs.md) | `ntm::ntmesh<T, ntm::WithAttribs>` | Numeric columns on points, vertices, prims, and the mesh |
-| [`ntmesh_strattr.h`](ntmesh_strattr.md) | `ntm::ntmesh<T, ntm::WithStrAttribs>` | Those columns plus host-only strings |
+| [`ntmesh_attribs.h`](ntmesh_attribs.md) | `ntm::ntmesh<T, ntm::WithAttribs<T>>` | Numeric columns on points, vertices, prims, and the mesh |
+| [`ntmesh_strattr.h`](ntmesh_strattr.md) | `ntm::ntmesh<T, ntm::WithStrAttribs<T>>` | Those columns plus host-only strings |
 | [`ntmesh_file.h`](ntmesh_file.md) | any of the three | ASCII `.obj` and ASCII `.geo` |
 | [`ntmesh_bw_tets.h`](ntmesh_bw_tets.md) | `ntm::TetMesh<T>` | Bowyer–Watson tets of a point array |
 
@@ -41,7 +41,7 @@ Arrays live in `Buf<T>`: a pointer, a count, and a capacity.
 |------|----------------|
 | plain copy | Shares every pointer |
 | `clear()` | Frees the buffers. Call it once for a set of shared copies |
-| `copyMesh` | New buffers. Same attribute policy. Positions convert from the source scalar to the destination scalar |
+| `copyMesh` | New buffers. The same policy copies column bytes and converts positions. `WithAttribs<Src>` onto `WithAttribs<Dst>` also converts each numeric component |
 | `copyTopo` | Points and the four prim lists only. The destination is cleared first, so its attributes are dropped |
 | `copyNumeric` | Points, prim lists, and numeric columns. The string pool stays behind |
 
